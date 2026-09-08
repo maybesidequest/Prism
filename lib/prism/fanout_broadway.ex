@@ -2,6 +2,7 @@ defmodule Prism.FanoutBroadway do
   use Broadway
 
   require Logger
+  require OpenTelemetry.Tracer
 
   alias Broadway.Message
   alias Prism.Helpers
@@ -182,115 +183,105 @@ defmodule Prism.FanoutBroadway do
       message
     else
       polled_at = :os.system_time(:millisecond)
-      {payload_binary, enqueued_at} = extract_payload_and_time(data)
+      {payload_binary, fallback_enqueued_at} = extract_payload_and_time(data)
 
-      try do
-        payload = Prism.PrismStreamPayload.decode!(payload_binary)
+      timing =
+        Prism.DeliveryTiming.from_metadata(message.metadata, fallback_enqueued_at, polled_at)
 
-        batch_id = payload.batch_id
+      OpenTelemetry.Tracer.with_span "prism.delivery.consume" do
+        Prism.DeliveryTiming.record_consumed(timing)
+        enqueued_at = timing.origin_at_ms
 
-        targets =
-          Enum.map(payload.targets, fn t ->
-            # Parse overrides from JSON string
-            overrides =
-              if is_nil(t.overrides) or t.overrides == "" do
-                nil
-              else
-                Jason.decode!(t.overrides)
-              end
+        try do
+          payload = Prism.PrismStreamPayload.decode!(payload_binary)
 
-            %{
-              "channel_id" => t.channel_id,
-              "webhook_id" => t.webhook_id,
-              "webhook_token" => t.webhook_token,
-              "guild_id" => t.guild_id,
-              "hub_id" => t.hub_id,
-              "thread_id" =>
-                if(is_nil(t.thread_id) or t.thread_id == "", do: nil, else: t.thread_id),
-              "message_id" =>
-                if(is_nil(t.message_id) or t.message_id == "", do: nil, else: t.message_id),
-              "overrides" => overrides,
-              "polarizer_action_id" => payload.action_id
-            }
-          end)
+          batch_id = payload.batch_id
 
-        action = if payload.action == "", do: "execute", else: payload.action
+          targets =
+            Enum.map(payload.targets, fn t ->
+              # Parse overrides from JSON string
+              overrides =
+                if is_nil(t.overrides) or t.overrides == "" do
+                  nil
+                else
+                  Jason.decode!(t.overrides)
+                end
 
-        # Payload is now a JSON string
-        discord_payload =
-          if is_nil(payload.payload) or payload.payload == "",
-            do: %{},
-            else: Jason.decode!(payload.payload)
+              %{
+                "channel_id" => t.channel_id,
+                "webhook_id" => t.webhook_id,
+                "webhook_token" => t.webhook_token,
+                "guild_id" => t.guild_id,
+                "hub_id" => t.hub_id,
+                "thread_id" =>
+                  if(is_nil(t.thread_id) or t.thread_id == "", do: nil, else: t.thread_id),
+                "message_id" =>
+                  if(is_nil(t.message_id) or t.message_id == "", do: nil, else: t.message_id),
+                "overrides" => overrides,
+                "polarizer_action_id" => payload.action_id
+              }
+            end)
 
-        parent_message_id = payload.message_id
+          action = if payload.action == "", do: "execute", else: payload.action
 
-        metadata =
-          if payload.metadata do
-            %{
-              "author_id" => payload.metadata.author_id,
-              "guild_id" => payload.metadata.guild_id,
-              "guild_name" => payload.metadata.guild_name,
-              "badges" => payload.metadata.badges
-            }
-          else
-            %{}
-          end
+          # Payload is now a JSON string
+          discord_payload =
+            if is_nil(payload.payload) or payload.payload == "",
+              do: %{},
+              else: Jason.decode!(payload.payload)
 
-        hub_id = payload.hub_id
+          parent_message_id = payload.message_id
 
-        # The cancel flag means "the source message is gone, stop delivering it".
-        # A delete batch is how those copies get removed, so it must never be
-        # gated by it — the producer sets the flag on the same message_id right
-        # after enqueueing the delete, which would cancel every delete.
-        if action != "delete" and parent_message_id != nil and parent_message_id != "" and
-             Prism.CancelChecker.cancelled?(parent_message_id) do
-          Logger.info(
-            "FanoutBroadway: skipping cancelled batch batch_id=#{batch_id} message_id=#{parent_message_id}"
-          )
+          metadata =
+            if payload.metadata do
+              %{
+                "author_id" => payload.metadata.author_id,
+                "guild_id" => payload.metadata.guild_id,
+                "guild_name" => payload.metadata.guild_name,
+                "badges" => payload.metadata.badges
+              }
+            else
+              %{}
+            end
 
-          publish_terminal_failure!(
-            payload.action_id,
-            parent_message_id,
-            "CANCELLED_BEFORE_DELIVERY"
-          )
+          hub_id = payload.hub_id
 
-          message
-        else
-          shard_index = payload.shard_index || 0
-
-          OpenTelemetry.Tracer.set_attributes([
-            {:batch_id, batch_id},
-            {:action, action},
-            {:target_count, length(targets)},
-            {:shard_index, shard_index}
-          ])
-
-          if action == "execute" and Helpers.empty_discord_payload?(discord_payload) do
-            Logger.warning(
-              "FanoutBroadway: skipping empty execute batch batch_id=#{batch_id} — no content, embeds, or components"
+          # The cancel flag means "the source message is gone, stop delivering it".
+          # A delete batch is how those copies get removed, so it must never be
+          # gated by it — the producer sets the flag on the same message_id right
+          # after enqueueing the delete, which would cancel every delete.
+          if action != "delete" and parent_message_id != nil and parent_message_id != "" and
+               Prism.CancelChecker.cancelled?(parent_message_id) do
+            Logger.info(
+              "FanoutBroadway: skipping cancelled batch batch_id=#{batch_id} message_id=#{parent_message_id}"
             )
 
-            publish_terminal_failure!(payload.action_id, parent_message_id, "EMPTY_PAYLOAD")
-          else
-            if Prism.EventBus.Config.transport_backend() == Prism.EventBus.Transport.Kafka do
-              Prism.FanoutBroadway.Batch.process_batch(
-                action,
-                batch_id,
-                discord_payload,
-                targets,
-                polled_at,
-                enqueued_at,
-                parent_message_id,
-                metadata,
-                hub_id,
-                shard_index
-              )
-            else
-              max_async = Prism.Config.max_async_batches()
-              current = Prism.AsyncBatchCounter.count()
+            publish_terminal_failure!(
+              payload.action_id,
+              parent_message_id,
+              "CANCELLED_BEFORE_DELIVERY"
+            )
 
-              if current < max_async do
-                Prism.FanoutBroadway.Batch.spawn_async_batch(
+            message
+          else
+            shard_index = payload.shard_index || 0
+
+            OpenTelemetry.Tracer.set_attributes([
+              {:batch_id, batch_id},
+              {:action, action},
+              {:target_count, length(targets)},
+              {:shard_index, shard_index}
+            ])
+
+            if action == "execute" and Helpers.empty_discord_payload?(discord_payload) do
+              Logger.warning(
+                "FanoutBroadway: skipping empty execute batch batch_id=#{batch_id} — no content, embeds, or components"
+              )
+
+              publish_terminal_failure!(payload.action_id, parent_message_id, "EMPTY_PAYLOAD")
+            else
+              if Prism.EventBus.Config.transport_backend() == Prism.EventBus.Transport.Kafka do
+                Prism.FanoutBroadway.Batch.process_batch(
                   action,
                   batch_id,
                   discord_payload,
@@ -303,30 +294,48 @@ defmodule Prism.FanoutBroadway do
                   shard_index
                 )
               else
-                Logger.warning(
-                  "Async batch cap reached (#{current}/#{max_async}). " <>
-                    "Re-enqueueing batch #{batch_id} to delayed queue (200ms)."
-                )
+                max_async = Prism.Config.max_async_batches()
+                current = Prism.AsyncBatchCounter.count()
 
-                payload_map = retry_payload(payload_binary, message.metadata)
+                if current < max_async do
+                  Prism.FanoutBroadway.Batch.spawn_async_batch(
+                    action,
+                    batch_id,
+                    discord_payload,
+                    targets,
+                    polled_at,
+                    enqueued_at,
+                    parent_message_id,
+                    metadata,
+                    hub_id,
+                    shard_index
+                  )
+                else
+                  Logger.warning(
+                    "Async batch cap reached (#{current}/#{max_async}). " <>
+                      "Re-enqueueing batch #{batch_id} to delayed queue (200ms)."
+                  )
 
-                case Prism.DelayedQueue.enqueue(payload_map, 200) do
-                  :ok ->
-                    :ok
+                  payload_map = retry_payload(payload_binary, message.metadata)
 
-                  {:error, reason} ->
-                    raise "failed to durably re-enqueue batch: #{inspect(reason)}"
+                  case Prism.DelayedQueue.enqueue(payload_map, 200) do
+                    :ok ->
+                      :ok
+
+                    {:error, reason} ->
+                      raise "failed to durably re-enqueue batch: #{inspect(reason)}"
+                  end
                 end
               end
             end
-          end
 
-          message
+            message
+          end
+        rescue
+          e ->
+            Logger.error("Failed to process approved Prism job: #{Exception.message(e)}")
+            Message.failed(message, {:processing_failed, Exception.message(e)})
         end
-      rescue
-        e ->
-          Logger.error("Failed to process approved Prism job: #{Exception.message(e)}")
-          Message.failed(message, {:processing_failed, Exception.message(e)})
       end
     end
   end
@@ -426,6 +435,7 @@ defmodule Prism.FanoutBroadway do
       |> Map.put("prism-retry-attempt", Integer.to_string(attempt))
       |> Map.put("prism-not-before-ms", Integer.to_string(not_before_ms))
       |> Map.put("prism-retry-reason", to_string(reason))
+      |> Map.put("interchat-published-at-ms", Integer.to_string(System.system_time(:millisecond)))
 
     publish_until_ack(
       fn ->

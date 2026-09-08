@@ -195,14 +195,24 @@ defmodule Prism.DiscordWorker do
                     req_end = System.monotonic_time(:millisecond)
                     req_end_wall = :os.system_time(:millisecond)
 
-                    if Code.ensure_loaded?(Mix) and Mix.env() == :dev do
-                      queue_time = if enqueued_at, do: polled_at - enqueued_at, else: 0
-                      prep_time = if polled_at, do: req_start_wall - polled_at, else: 0
-                      http_time = req_end - req_start
-                      total_time = if enqueued_at, do: req_end_wall - enqueued_at, else: 0
+                    timing =
+                      Prism.DeliveryTiming.record_completed(
+                        enqueued_at || polled_at || req_start_wall,
+                        polled_at || req_start_wall,
+                        req_start_wall,
+                        req_end_wall,
+                        req_end - req_start,
+                        %{
+                          action: action,
+                          batch_id: batch_id,
+                          webhook_id: webhook_id,
+                          success: match?({:ok, _}, result)
+                        }
+                      )
 
+                    if Code.ensure_loaded?(Mix) and Mix.env() == :dev do
                       Logger.info(
-                        "[Timing] Webhook #{webhook_id} (batch #{batch_id || "N/A"}) - Queue: #{queue_time}ms | Prep: #{prep_time}ms | Discord HTTP: #{http_time}ms | Total End-to-End: #{total_time}ms"
+                        "[Timing] Webhook #{webhook_id} (batch #{batch_id || "N/A"}) - Queue: #{timing.queue_ms}ms | Prep: #{timing.preparation_ms}ms | Discord HTTP: #{timing.http_ms}ms | Total End-to-End: #{timing.origin_to_delivery_ms}ms"
                       )
                     end
 

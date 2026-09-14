@@ -232,7 +232,7 @@ defmodule Prism.Config do
 
   @doc "Reply index TTL in seconds"
   def reply_index_ttl_seconds,
-    do: Application.get_env(:prism, :reply_index_ttl_seconds, 604_800)
+    do: Application.get_env(:prism, :reply_index_ttl_seconds, 259_200)
 
   # ── Cluster ────────────────────────────────────────────────────────────
 

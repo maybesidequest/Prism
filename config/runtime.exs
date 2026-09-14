@@ -121,7 +121,10 @@ if config_env() != :test do
     callback_include_parent_message_id: env!("PRISM_INCLUDE_PARENT_MESSAGE_ID", :boolean, false),
     reply_index_enabled: env!("PRISM_REPLY_INDEX_ENABLED", :boolean, false),
     prism_prefix: env!("PRISM_PREFIX", :string, "prism"),
-    reply_index_ttl_seconds: env!("PRISM_REPLY_INDEX_TTL_SECONDS", :integer, 604_800),
+    # 72h: mirrors the bot's `prism_reply_index_ttl_seconds`. Both services
+    # write `prism:targets:{id}`, so these defaults must stay in lockstep
+    # (adopted mapping-retention policy, D03 scope resolved 2026-09-12).
+    reply_index_ttl_seconds: env!("PRISM_REPLY_INDEX_TTL_SECONDS", :integer, 259_200),
     cancel_ttl: env!("PRISM_CANCEL_TTL", :integer, 300),
     cluster_topology: env!("PRISM_CLUSTER_TOPOLOGY", :string, "prism_cluster"),
     events_stream: env!("EVENTS_STREAM", :string, "events.bus"),

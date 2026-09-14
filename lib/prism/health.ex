@@ -1,6 +1,8 @@
 defmodule Prism.Health do
   @moduledoc """
-  Minimal liveness and readiness endpoints for orchestration probes.
+  Liveness, readiness and metrics endpoints for orchestration probes.
+
+  `/metrics` serves Prometheus text exposition format from `Prism.MetricsSink`.
 
   Liveness only proves the BEAM can serve requests. Readiness additionally
   requires Prism's supervisor and the critical Kafka, Redis, and fanout
@@ -22,6 +24,12 @@ defmodule Prism.Health do
     else
       send_resp(conn, 503, "not ready\n")
     end
+  end
+
+  get "/metrics" do
+    conn
+    |> put_resp_content_type("text/plain; version=0.0.4; charset=utf-8")
+    |> send_resp(200, Prism.MetricsSink.render())
   end
 
   match _ do

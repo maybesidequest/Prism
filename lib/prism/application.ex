@@ -107,6 +107,12 @@ defmodule Prism.Application do
              ]
            }},
           {Task.Supervisor, name: Prism.TaskSup},
+          # :pg ships as a kernel module with no application of its own, so the
+          # default scope has to be started here. Starting it from inside
+          # MetricsAPI.init/1 — as it used to be — left it unsupervised and linked
+          # to that GenServer, and re-ran on every restart of it.
+          %{id: :pg, start: {:pg, :start_link, []}},
+          {Prism.MetricsSink, []},
           {Prism.MetricsAPI, []}
         ] ++
         redix_children ++

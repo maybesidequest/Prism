@@ -1,6 +1,10 @@
-# Elixir Prism Service — Agent Context (`Prism/`)
+# Elixir Prism Service — Agent Context (`prism/`)
 
 This document is the specialized guide for agents working on the Elixir-based webhook broadcast service `Prism`. It covers Stream lane consumers, key expansion functions, rate limit tracking, and the atomic delayed queue system.
+
+## Search and repository boundaries
+
+For any file search or grep in the current git-indexed directory, use the Prism `fff_prism` MCP server. Use `find_files` for file names, `grep` for one content identifier, and `multi_grep` for several alternatives. FFF is scoped to one repository; use the FFF server configured for the target repository when a task crosses into a sibling repo. If that server is unavailable, use regular search scoped to that repository.
 
 ---
 
@@ -9,7 +13,7 @@ This document is the specialized guide for agents working on the Elixir-based we
 Prism is an OTP application built in Elixir that consumes Polarizer-approved binary Protobuf payloads from Kafka and dispatches them concurrently via Finch HTTP clients to Discord's webhooks. Redis remains an internal retry/rate-limit/cache dependency.
 
 ```
-Prism/
+prism/
 ├── lib/
 │   ├── prism/
 │   │   ├── discord_worker/           # Discord HTTP delivery (split into sub-modules)
@@ -17,28 +21,32 @@ Prism/
 │   │   │   ├── dead_message.ex       # Dead message cache (prevents retrying deleted messages)
 │   │   │   ├── http.ex               # HTTP request building & execution
 │   │   │   └── retry.ex              # Retry spawning & delayed queue enqueue
-│   │   ├── fanout_broadway/          # Fanout pipeline (split into sub-modules)
+│   │   ├── fanout_broadway/          # Jobs-lane fanout pipeline (split into sub-modules)
 │   │   │   ├── batch.ex              # Batch fan-out, result aggregation, reply index
 │   │   │   ├── key_expansion.ex      # Short→long JSON key mapping
-
+│   │   │   └── preflight.ex           # Batched checkpoint and rate-limit checks
 │   │   ├── rate_limit/               # Rate limit tracking & Cloudflare backpressure
 │   │   │   ├── backpressure.ex       # IP-level Cloudflare block tracking
 │   │   │   ├── bucket.ex             # Redis-backed token bucket
 │   │   │   ├── headers.ex            # Discord/Cloudflare HTTP header parsing
 │   │   │   └── invalid_request_tracker.ex  # ETS sliding-window invalid request counter
 │   │   ├── application.ex            # Supervision tree configuration
+│   │   ├── async_batch_counter.ex     # In-flight async batch cap
 │   │   ├── cancel_checker.ex         # Source message cancel detection (gated)
+│   │   ├── congestion_window.ex      # Optional Cubic-style concurrency control
 │   │   ├── config.ex                 # Centralized configuration module
 │   │   ├── delayed_queue.ex          # Atomic Redis ZSET enqueue/pop handlers
 │   │   ├── delayed_scheduler.ex      # Event-driven queue scheduler
 │   │   ├── discord_worker.ex         # Core orchestration (process_target, process_retry)
-│   │   ├── fanout_broadway.ex        # Broadway pipeline (Fast/Slow lane consumers)
+│   │   ├── fanout_broadway.ex        # Broadway pipeline for approved jobs
+│   │   ├── health.ex                 # Liveness and readiness probes
 │   │   ├── helpers.ex                # Shared utilities (redix_command, payload extraction, etc.)
 │   │   ├── metrics_api.ex            # Telemetry/metrics HTTP API
 │   │   ├── metrics_logger.ex         # Periodic server metrics logging
 │   │   ├── rate_limit.ex             # Public facade for all rate-limit operations
 │   │   ├── redis_client.ex           # OffBroadwayRedisStream client adapter
 │   │   ├── retry_broadway.ex         # Retry stream consumer
+│   │   ├── schema_registry.ex        # Runtime event/schema validation
 │   │   └── stream_trimmer.ex         # Periodic stream XTRIM (gated)
 │   └── prism.ex
 ├── config/                           # Elixir compile-time configurations
@@ -72,8 +80,8 @@ Key config categories:
 
 Prism runs Broadway pipelines to consume batches concurrently:
 
-1. **Jobs Lane (default `prism.stream.jobs`):** The authoritative Kafka topic written by Polarizer after policy approval.
-2. **Retry Lane (default `discord:fanout:stream:retries`):** Dedicated stream fed by the delayed scheduler for failed webhooks. (Always uses Redis Streams, as it's an internal delayed queue implementation.)
+1. **Jobs Lane (default `prism.stream.jobs`):** The authoritative production topic written by Polarizer after policy approval. The configured EventBus backend can be swapped for local/test use, but production is Kafka.
+2. **Retry Lane (default `prism.stream.retries`):** Internal Redis Stream fed by the delayed scheduler for per-target and backpressure retries.
 
 Whole approved-job retries use the durable Kafka topic `prism.stream.jobs.retry`; the Redis retry lane is limited to per-target scheduling and is never the only retained copy of an acknowledged Kafka job.
 
@@ -83,7 +91,7 @@ All lane parameters (concurrency, receive intervals) are configurable via `Prism
 
 ## Key Expansion (`Prism.FanoutBroadway.KeyExpansion`)
 
-To optimize memory usage, publishers may minify JSON object keys before pushing batches to Redis. Prism automatically expands these keys to their full names using a compile-time `@key_map`.
+To optimize payload size, publishers may minify JSON object keys before publishing a batch. Prism automatically expands these keys to their full names using a compile-time `@key_map`, regardless of whether the batch arrived through Kafka or the Redis compatibility backend.
 
 ```elixir
 # Detects format: if the first key is inside @key_map, recursively maps keys
@@ -97,7 +105,7 @@ def expand_keys(map) when is_map(map) do ... end
 
 ## Atomic Delayed Queue System
 
-Failed webhook targets (rate-limited, server errors, network dropouts) are enqueued in Redis for delayed execution using a **ZSET** (default key `discord:fanout:delayed`).
+Failed webhook targets (rate-limited, server errors, network dropouts) are enqueued in Redis for delayed execution using a **ZSET** (default key `prism:delayed`).
 
 ### Enqueueing (`Prism.DelayedQueue.enqueue/2`)
 - Adds a unique `retry_id` to the payload to prevent duplicates in the ZSET.

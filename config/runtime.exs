@@ -40,10 +40,13 @@ if config_env() != :test do
       uri when is_binary(uri) and uri != "" ->
         uri |> Redix.URI.to_start_options() |> Keyword.put(:socket_opts, redis_socket_opts)
 
-      _ when config_env() == :prod ->
-        raise "REDIS_URI is required in production"
-
       _ ->
+        # config_env() is not guard-safe (breaks release boot on all current
+        # Elixir versions, 1.19 and 1.20 both); check in the body instead.
+        if config_env() == :prod do
+          raise "REDIS_URI is required in production"
+        end
+
         [
           host: env!("REDIS_HOST", :string, "localhost"),
           port: env!("REDIS_PORT", :integer, 6379),

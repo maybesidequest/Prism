@@ -356,6 +356,7 @@ defmodule Prism.MetricsSink do
         else
           []
         end
+
       _ ->
         []
     end)
@@ -365,8 +366,9 @@ defmodule Prism.MetricsSink do
   defp render_label_value(value) when is_binary(value), do: value
   defp render_label_value(value) when is_number(value), do: to_string(value)
 
-  defp render_label_value(value) when is_atom(value) and not is_nil(value) and not is_boolean(value),
-    do: to_string(value)
+  defp render_label_value(value)
+       when is_atom(value) and not is_nil(value) and not is_boolean(value),
+       do: to_string(value)
 
   defp render_label_value(_value), do: nil
 

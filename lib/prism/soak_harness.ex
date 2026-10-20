@@ -229,7 +229,8 @@ defmodule Prism.SoakHarness do
       max_inflight_observed:
         samples |> Enum.map(& &1["inflight_batches"]) |> Enum.max(fn -> 0 end),
       processed_targets: Prism.AsyncBatchCounter.get_processed_targets(),
-      targets_per_second: Float.round(Prism.AsyncBatchCounter.get_processed_targets() / elapsed_s, 1),
+      targets_per_second:
+        Float.round(Prism.AsyncBatchCounter.get_processed_targets() / elapsed_s, 1),
       mem_available_min_bytes: Enum.min(available, fn -> 0 end),
       mem_available_max_bytes: Enum.max(available, fn -> 0 end),
       beam_rss_min_bytes: Enum.min(rss, fn -> 0 end),
@@ -267,7 +268,10 @@ defmodule Prism.SoakHarness do
 
   defp start_otel_sink(opts) do
     if Keyword.get(opts, :otel_sink, true) do
-      uri = URI.parse(Application.get_env(:opentelemetry_exporter, :otlp_endpoint, "http://localhost:4318"))
+      uri =
+        URI.parse(
+          Application.get_env(:opentelemetry_exporter, :otlp_endpoint, "http://localhost:4318")
+        )
 
       {:ok, pid} =
         Bandit.start_link(

@@ -107,7 +107,11 @@ defmodule Prism.MetricsSinkTest do
     assert rendered =~ ~s(prism_delivery_completed_http_ms_count{action="execute"} 500)
     refute rendered =~ "batch-1-", "a batch id must never reach a series key"
 
-    series = Regex.run(~r/prism_metrics_series_total (\d+)/, rendered) |> List.last() |> String.to_integer()
+    series =
+      Regex.run(~r/prism_metrics_series_total (\d+)/, rendered)
+      |> List.last()
+      |> String.to_integer()
+
     assert series <= 64, "series must stay bounded by the declared labels"
     assert rendered =~ "prism_metrics_series_dropped_total 0"
   end

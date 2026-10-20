@@ -12,17 +12,20 @@ ENV MIX_ENV=prod
 
 RUN mix local.hex --force && mix local.rebar --force
 
+# deps/ and _build/ live in image layers rather than cache mounts: ARC runners
+# start every job with an empty BuildKit, so a cache mount is always cold in CI
+# and only the registry layer cache can carry compiled dependencies forward.
+# config.exs is compile-time config, so it lands before deps.compile;
+# runtime.exs is read at boot and follows with the application source.
 COPY mix.exs mix.lock ./
-RUN --mount=type=cache,id=prism-glibc-deps,target=/app/deps,sharing=locked \
-    --mount=type=cache,id=prism-glibc-build,target=/app/_build,sharing=locked \
+COPY config/config.exs config/
+RUN --mount=type=cache,target=/root/.hex/packages \
     mix deps.get --only prod && \
     mix deps.compile
 
-COPY config/ config/
+COPY config/runtime.exs config/
 COPY lib/ lib/
-RUN --mount=type=cache,id=prism-glibc-deps,target=/app/deps,sharing=locked \
-    --mount=type=cache,id=prism-glibc-build,target=/app/_build,sharing=locked \
-    mix compile && \
+RUN mix compile && \
     mix release --path /app/release --overwrite && \
     find /app/release -type f \( -name '*.so' -o -name 'beam.smp' \) \
         -exec strip --strip-unneeded '{}' +

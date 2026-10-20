@@ -3,7 +3,7 @@
 defmodule Prism.PrismStreamMetadata do
   @moduledoc false
   if function_exported?(Protox, :check_generator_version, 1) do
-    Protox.check_generator_version(1)
+    Protox.check_generator_version(2)
   else
     raise "This code was generated with protox 2 but the runtime is using an older version of protox."
   end
@@ -18,6 +18,22 @@ defmodule Prism.PrismStreamMetadata do
   defstruct badges: [], guild_name: "", guild_id: "", author_id: "", __uf__: []
 
   (
+    @schema Protox.MessageSchema.expand!(
+              Prism.PrismStreamMetadata,
+              :proto3,
+              [
+                {:author_id, 1, :optional, {:scalar, ""}, :string},
+                {:badges, 4, :repeated, :unpacked, :string},
+                {:guild_id, 2, :optional, {:scalar, ""}, :string},
+                {:guild_name, 3, :optional, {:scalar, ""}, :string}
+              ],
+              nil
+            )
+    @spec schema() :: Protox.MessageSchema.t()
+    def schema(), do: @schema
+  )
+
+  (
     (
       @spec encode(t()) :: {:ok, iodata(), non_neg_integer()} | {:error, any()}
       def encode(msg) do
@@ -28,7 +44,19 @@ defmodule Prism.PrismStreamMetadata do
 
       @spec encode!(t()) :: {iodata(), non_neg_integer()} | no_return()
       def encode!(msg) do
-        {_acc = [], _acc_size = 0}
+        encode_internal!(msg)
+      rescue
+        e in [Protox.EncodingError, Protox.RequiredFieldsError] ->
+          reraise e, __STACKTRACE__
+
+        e ->
+          encode_diagnose!(msg)
+          reraise e, __STACKTRACE__
+      end
+
+      @doc false
+      def encode_internal!(msg) do
+        {[], 0}
         |> encode_badges(msg)
         |> encode_guild_name(msg)
         |> encode_guild_id(msg)
@@ -38,90 +66,91 @@ defmodule Prism.PrismStreamMetadata do
     )
 
     defp encode_badges({acc, acc_size}, msg) do
-      case msg.badges do
+      case :erlang.map_get(:badges, msg) do
         [] ->
           {acc, acc_size}
 
         values ->
-          {value_bytes, value_size} =
-            (
-              {value_bytes, value_size} =
-                Enum.reduce(values, {_local_acc = [], _local_acc_size = 0}, fn value,
-                                                                               {local_acc,
-                                                                                local_acc_size} ->
-                  {value_bytes, value_bytes_size} = Protox.Encode.encode_string(value)
-                  {[value_bytes, "\"" | local_acc], local_acc_size + 1 + value_bytes_size}
-                end)
-
-              {Enum.reverse(value_bytes), value_size}
-            )
-
+          {value_bytes, value_size} = encode_repeated_4(values, [], 0)
           {[value_bytes | acc], acc_size + value_size}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:badges, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_guild_name({acc, acc_size}, msg) do
-      if msg.guild_name == "" do
+      if :erlang.map_get(:guild_name, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.guild_name)
-        {["\x1A", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:guild_name, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\x1A", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:guild_name, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_guild_id({acc, acc_size}, msg) do
-      if msg.guild_id == "" do
+      if :erlang.map_get(:guild_id, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.guild_id)
-        {["\x12", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:guild_id, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\x12", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:guild_id, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_author_id({acc, acc_size}, msg) do
-      if msg.author_id == "" do
+      if :erlang.map_get(:author_id, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.author_id)
-        {["\n", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:author_id, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\n", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:author_id, "invalid field value"), __STACKTRACE__
     end
 
-    defp encode_unknown_fields({acc, acc_size}, msg) do
-      Enum.reduce(msg.__uf__, {acc, acc_size}, fn {tag, wire_type, bytes}, {acc, acc_size} ->
-        case wire_type do
-          0 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :int32)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
+    (
+      defp encode_repeated_4([], acc, size), do: {acc, size}
 
-          1 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :double)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
+      defp encode_repeated_4([value | rest], acc, size) do
+        (
+          (
+            delimited = value
+            delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+          )
 
-          2 ->
-            {len_bytes, len_size} = bytes |> byte_size() |> Protox.Varint.encode()
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :packed)
+          value_bytes = [delimited_prefix, delimited]
+          value_bytes_size = byte_size(delimited_prefix) + byte_size(delimited)
+        )
 
-            {[acc, <<key_bytes::binary, len_bytes::binary, bytes::binary>>],
-             acc_size + key_size + len_size + byte_size(bytes)}
+        encode_repeated_4(rest, [acc, "\"", value_bytes], size + 1 + value_bytes_size)
+      end
+    )
 
-          5 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :float)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
-        end
-      end)
+    (
+      defp encode_diagnose!(%{__struct__: __MODULE__} = msg) do
+        Protox.Encode.find_invalid_field!(msg, [
+          {:badges, &encode_badges/2, nil},
+          {:guild_name, &encode_guild_name/2, nil},
+          {:guild_id, &encode_guild_id/2, nil},
+          {:author_id, &encode_author_id/2, nil}
+        ])
+      end
+
+      defp encode_diagnose!(_malformed_input), do: :ok
+    )
+
+    defp encode_unknown_fields(acc, msg) do
+      Protox.Encode.encode_unknown_fields(acc, :erlang.map_get(:__uf__, msg))
     end
   )
 
@@ -137,155 +166,94 @@ defmodule Prism.PrismStreamMetadata do
 
       (
         @spec decode!(binary()) :: t() | no_return()
-        def decode!(bytes) do
-          parse_key_value(bytes, struct(Prism.PrismStreamMetadata))
-        end
+        def decode!(bytes), do: parse_key_value(bytes, __struct__())
       )
     )
 
     (
       @spec parse_key_value(binary(), struct()) :: struct()
       defp parse_key_value(<<>>, msg) do
-        %{msg | badges: Enum.reverse(msg.badges), __uf__: Enum.reverse(msg.__uf__)}
+        msg =
+          case :erlang.map_get(:badges, msg) do
+            [_first, _second | _tail] = values -> %{msg | badges: :lists.reverse(values)}
+            _empty_or_single -> msg
+          end
+
+        case :erlang.map_get(:__uf__, msg) do
+          [_first, _second | _tail] = values -> %{msg | __uf__: :lists.reverse(values)}
+          _empty_or_single -> msg
+        end
       end
 
       defp parse_key_value(bytes, msg) do
-        {field, rest} =
-          case bytes do
-            <<_::5, 3::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 3")
+        case bytes do
+          <<_tag::5, 3::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 3")
 
-            <<_::5, 4::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 4")
+          <<_tag::5, 4::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 4")
 
-            <<_::5, 6::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 6")
+          <<_tag::5, 6::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 6")
 
-            <<_::5, 7::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 7")
+          <<_tag::5, 7::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 7")
 
-            <<0::5, _::3, _rest::binary>> ->
-              raise %Protox.IllegalTagError{}
+          <<0::5, _wire_type::3, _rest::binary>> ->
+            raise %Protox.IllegalTagError{}
 
-            <<4::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[badges: [Protox.Decode.validate_string!(delimited) | msg.badges]], rest}
+          <<"\"", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
 
-            <<3::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[guild_name: Protox.Decode.validate_string!(delimited)], rest}
+            msg = %{
+              msg
+              | badges: [
+                  Protox.Decode.validate_string!(delimited) | :erlang.map_get(:badges, msg)
+                ]
+            }
 
-            <<2::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[guild_id: Protox.Decode.validate_string!(delimited)], rest}
+            parse_key_value(rest, msg)
 
-            <<1::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[author_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<"\x1A", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | guild_name: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<bytes::binary>> ->
-              {tag, wire_type, rest} = Protox.Decode.parse_key(bytes)
-              {value, rest} = Protox.Decode.parse_unknown(tag, wire_type, rest)
-              {[__uf__: [value | msg.__uf__]], rest}
-          end
+          <<"\x12", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | guild_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-        msg_updated = struct(msg, field)
-        parse_key_value(rest, msg_updated)
+          <<"\n", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | author_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
+
+          <<bytes::binary>> ->
+            {tag, wire_type, rest} = Protox.Decode.parse_key(bytes)
+            {value, rest} = Protox.Decode.parse_unknown(tag, wire_type, rest)
+            msg = %{msg | __uf__: [value | :erlang.map_get(:__uf__, msg)]}
+            parse_key_value(rest, msg)
+        end
       end
     )
   )
 
   (
     @spec unknown_fields(struct()) :: [{non_neg_integer(), Protox.Types.tag(), binary()}]
-    def unknown_fields(msg) do
-      msg.__uf__
-    end
+    def unknown_fields(msg), do: msg.__uf__
 
     @spec unknown_fields_name() :: :__uf__
-    def unknown_fields_name() do
-      :__uf__
-    end
+    def unknown_fields_name(), do: :__uf__
 
     @spec clear_unknown_fields(struct) :: struct
-    def clear_unknown_fields(msg) do
-      struct!(msg, __uf__: [])
-    end
+    def clear_unknown_fields(msg), do: struct!(msg, __uf__: [])
   )
 
   (
     @spec default(atom()) ::
-            {:ok, boolean() | integer() | String.t() | float()}
+            {:ok, Protox.Scalar.scalar_default_value_type()}
             | {:error, :no_such_field | :no_default_value}
-    def default(:badges) do
-      {:error, :no_default_value}
-    end
-
-    def default(:guild_name) do
-      {:ok, ""}
-    end
-
-    def default(:guild_id) do
-      {:ok, ""}
-    end
-
-    def default(:author_id) do
-      {:ok, ""}
-    end
-
-    def default(_) do
-      {:error, :no_such_field}
-    end
+    def default(field_name), do: Protox.MessageSchema.default(@schema, field_name)
   )
-
-  @spec schema() :: Protox.MessageSchema.t()
-  def schema() do
-    %{
-      __struct__: Protox.MessageSchema,
-      fields: %{
-        author_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :author_id,
-          tag: 1,
-          type: :string
-        },
-        badges: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: :unpacked,
-          label: :repeated,
-          name: :badges,
-          tag: 4,
-          type: :string
-        },
-        guild_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :guild_id,
-          tag: 2,
-          type: :string
-        },
-        guild_name: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :guild_name,
-          tag: 3,
-          type: :string
-        }
-      },
-      file_options: nil,
-      name: Prism.PrismStreamMetadata,
-      syntax: :proto3
-    }
-  end
 end

@@ -3,7 +3,7 @@
 defmodule Interchat.TrustAndSafety.V2.PrismDeliveryCallback do
   @moduledoc false
   if function_exported?(Protox, :check_generator_version, 1) do
-    Protox.check_generator_version(1)
+    Protox.check_generator_version(2)
   else
     raise "This code was generated with protox 2 but the runtime is using an older version of protox."
   end
@@ -24,6 +24,25 @@ defmodule Interchat.TrustAndSafety.V2.PrismDeliveryCallback do
             __uf__: []
 
   (
+    @schema Protox.MessageSchema.expand!(
+              Interchat.TrustAndSafety.V2.PrismDeliveryCallback,
+              :proto3,
+              [
+                {:action_id, 1, :optional, {:scalar, ""}, :string},
+                {:failure_code, 4, :optional, {:scalar, ""}, :string},
+                {:message_id, 2, :optional, {:scalar, ""}, :string},
+                {:occurred_at, 5, :optional, {:scalar, nil},
+                 {:message, Google.Protobuf.Timestamp}},
+                {:state, 3, :optional, {:scalar, :MESSAGE_STATE_UNSPECIFIED},
+                 {:enum, Interchat.TrustAndSafety.V2.MessageState}}
+              ],
+              nil
+            )
+    @spec schema() :: Protox.MessageSchema.t()
+    def schema(), do: @schema
+  )
+
+  (
     (
       @spec encode(t()) :: {:ok, iodata(), non_neg_integer()} | {:error, any()}
       def encode(msg) do
@@ -34,7 +53,19 @@ defmodule Interchat.TrustAndSafety.V2.PrismDeliveryCallback do
 
       @spec encode!(t()) :: {iodata(), non_neg_integer()} | no_return()
       def encode!(msg) do
-        {_acc = [], _acc_size = 0}
+        encode_internal!(msg)
+      rescue
+        e in [Protox.EncodingError, Protox.RequiredFieldsError] ->
+          reraise e, __STACKTRACE__
+
+        e ->
+          encode_diagnose!(msg)
+          reraise e, __STACKTRACE__
+      end
+
+      @doc false
+      def encode_internal!(msg) do
+        {[], 0}
         |> encode_occurred_at(msg)
         |> encode_failure_code(msg)
         |> encode_state(msg)
@@ -45,94 +76,97 @@ defmodule Interchat.TrustAndSafety.V2.PrismDeliveryCallback do
     )
 
     defp encode_occurred_at({acc, acc_size}, msg) do
-      case msg.occurred_at do
-        nil ->
-          {acc, acc_size}
+      if :erlang.map_get(:occurred_at, msg) == nil do
+        {acc, acc_size}
+      else
+        (
+          %{__struct__: Google.Protobuf.Timestamp} = child = :erlang.map_get(:occurred_at, msg)
+          {child_bytes, child_size} = Google.Protobuf.Timestamp.encode_internal!(child)
+          child_size_bytes = Protox.Varint.encode(child_size)
+        )
 
-        child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_message(child_field_value)
-          {["*", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        {["*", child_size_bytes, child_bytes | acc],
+         acc_size + 1 + (byte_size(child_size_bytes) + child_size)}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:occurred_at, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_failure_code({acc, acc_size}, msg) do
-      if msg.failure_code == "" do
+      if :erlang.map_get(:failure_code, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.failure_code)
-        {["\"", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:failure_code, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\"", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:failure_code, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_state({acc, acc_size}, msg) do
-      if msg.state == :MESSAGE_STATE_UNSPECIFIED do
+      if :erlang.map_get(:state, msg) == :MESSAGE_STATE_UNSPECIFIED do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} =
-          msg.state
-          |> Interchat.TrustAndSafety.V2.MessageState.encode()
-          |> Protox.Encode.encode_enum()
+        (
+          value = Interchat.TrustAndSafety.V2.MessageState.encode(:erlang.map_get(:state, msg))
 
-        {["\x18", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          value_bytes =
+            if value >= 0 do
+              Protox.Varint.encode(:erlang.band(value, 4_294_967_295))
+            else
+              Protox.Varint.encode(:erlang.band(value, 18_446_744_073_709_551_615))
+            end
+        )
+
+        {["\x18", value_bytes | acc], acc_size + 1 + byte_size(value_bytes)}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:state, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_message_id({acc, acc_size}, msg) do
-      if msg.message_id == "" do
+      if :erlang.map_get(:message_id, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.message_id)
-        {["\x12", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:message_id, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\x12", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:message_id, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_action_id({acc, acc_size}, msg) do
-      if msg.action_id == "" do
+      if :erlang.map_get(:action_id, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.action_id)
-        {["\n", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:action_id, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\n", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:action_id, "invalid field value"), __STACKTRACE__
     end
 
-    defp encode_unknown_fields({acc, acc_size}, msg) do
-      Enum.reduce(msg.__uf__, {acc, acc_size}, fn {tag, wire_type, bytes}, {acc, acc_size} ->
-        case wire_type do
-          0 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :int32)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
+    (
+      defp encode_diagnose!(%{__struct__: __MODULE__} = msg) do
+        Protox.Encode.find_invalid_field!(msg, [
+          {:occurred_at, &encode_occurred_at/2, Google.Protobuf.Timestamp},
+          {:failure_code, &encode_failure_code/2, nil},
+          {:state, &encode_state/2, nil},
+          {:message_id, &encode_message_id/2, nil},
+          {:action_id, &encode_action_id/2, nil}
+        ])
+      end
 
-          1 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :double)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
+      defp encode_diagnose!(_malformed_input), do: :ok
+    )
 
-          2 ->
-            {len_bytes, len_size} = bytes |> byte_size() |> Protox.Varint.encode()
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :packed)
-
-            {[acc, <<key_bytes::binary, len_bytes::binary, bytes::binary>>],
-             acc_size + key_size + len_size + byte_size(bytes)}
-
-          5 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :float)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
-        end
-      end)
+    defp encode_unknown_fields(acc, msg) do
+      Protox.Encode.encode_unknown_fields(acc, :erlang.map_get(:__uf__, msg))
     end
   )
 
@@ -148,181 +182,108 @@ defmodule Interchat.TrustAndSafety.V2.PrismDeliveryCallback do
 
       (
         @spec decode!(binary()) :: t() | no_return()
-        def decode!(bytes) do
-          parse_key_value(bytes, struct(Interchat.TrustAndSafety.V2.PrismDeliveryCallback))
-        end
+        def decode!(bytes), do: parse_key_value(bytes, __struct__())
       )
     )
 
     (
       @spec parse_key_value(binary(), struct()) :: struct()
       defp parse_key_value(<<>>, msg) do
-        %{msg | __uf__: Enum.reverse(msg.__uf__)}
+        case :erlang.map_get(:__uf__, msg) do
+          [_first, _second | _tail] = values -> %{msg | __uf__: :lists.reverse(values)}
+          _empty_or_single -> msg
+        end
       end
 
       defp parse_key_value(bytes, msg) do
-        {field, rest} =
-          case bytes do
-            <<_::5, 3::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 3")
+        case bytes do
+          <<_tag::5, 3::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 3")
 
-            <<_::5, 4::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 4")
+          <<_tag::5, 4::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 4")
 
-            <<_::5, 6::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 6")
+          <<_tag::5, 6::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 6")
 
-            <<_::5, 7::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 7")
+          <<_tag::5, 7::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 7")
 
-            <<0::5, _::3, _rest::binary>> ->
-              raise %Protox.IllegalTagError{}
+          <<0::5, _wire_type::3, _rest::binary>> ->
+            raise %Protox.IllegalTagError{}
 
-            <<5::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
+          <<"*", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
 
-              {[
-                 occurred_at:
-                   Protox.MergeMessage.merge(
-                     msg.occurred_at,
-                     Google.Protobuf.Timestamp.decode!(delimited)
-                   )
-               ], rest}
+            msg = %{
+              msg
+              | occurred_at:
+                  case :erlang.map_get(:occurred_at, msg) do
+                    nil ->
+                      Google.Protobuf.Timestamp.decode!(delimited)
 
-            <<4::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[failure_code: Protox.Decode.validate_string!(delimited)], rest}
+                    previous_value ->
+                      Protox.MergeMessage.merge(
+                        previous_value,
+                        Google.Protobuf.Timestamp.decode!(delimited)
+                      )
+                  end
+            }
 
-            <<3::5, _wire_type::3, bytes::binary>> ->
-              {value, rest} =
-                Protox.Decode.parse_enum(bytes, Interchat.TrustAndSafety.V2.MessageState)
+            parse_key_value(rest, msg)
 
-              {[state: value], rest}
+          <<"\"", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | failure_code: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<2::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[message_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<"\x18", 0::1, varint_value::7, rest::binary>> ->
+            value = Interchat.TrustAndSafety.V2.MessageState.decode(varint_value)
+            msg = %{msg | state: value}
+            parse_key_value(rest, msg)
 
-            <<1::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[action_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<"\x18", bytes::binary>> ->
+            {value, rest} =
+              Protox.Decode.parse_enum(bytes, Interchat.TrustAndSafety.V2.MessageState)
 
-            <<bytes::binary>> ->
-              {tag, wire_type, rest} = Protox.Decode.parse_key(bytes)
-              {value, rest} = Protox.Decode.parse_unknown(tag, wire_type, rest)
-              {[__uf__: [value | msg.__uf__]], rest}
-          end
+            msg = %{msg | state: value}
+            parse_key_value(rest, msg)
 
-        msg_updated = struct(msg, field)
-        parse_key_value(rest, msg_updated)
+          <<"\x12", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | message_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
+
+          <<"\n", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | action_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
+
+          <<bytes::binary>> ->
+            {tag, wire_type, rest} = Protox.Decode.parse_key(bytes)
+            {value, rest} = Protox.Decode.parse_unknown(tag, wire_type, rest)
+            msg = %{msg | __uf__: [value | :erlang.map_get(:__uf__, msg)]}
+            parse_key_value(rest, msg)
+        end
       end
     )
   )
 
   (
     @spec unknown_fields(struct()) :: [{non_neg_integer(), Protox.Types.tag(), binary()}]
-    def unknown_fields(msg) do
-      msg.__uf__
-    end
+    def unknown_fields(msg), do: msg.__uf__
 
     @spec unknown_fields_name() :: :__uf__
-    def unknown_fields_name() do
-      :__uf__
-    end
+    def unknown_fields_name(), do: :__uf__
 
     @spec clear_unknown_fields(struct) :: struct
-    def clear_unknown_fields(msg) do
-      struct!(msg, __uf__: [])
-    end
+    def clear_unknown_fields(msg), do: struct!(msg, __uf__: [])
   )
 
   (
     @spec default(atom()) ::
-            {:ok, boolean() | integer() | String.t() | float()}
+            {:ok, Protox.Scalar.scalar_default_value_type()}
             | {:error, :no_such_field | :no_default_value}
-    def default(:occurred_at) do
-      {:error, :no_default_value}
-    end
-
-    def default(:failure_code) do
-      {:ok, ""}
-    end
-
-    def default(:state) do
-      {:ok, :MESSAGE_STATE_UNSPECIFIED}
-    end
-
-    def default(:message_id) do
-      {:ok, ""}
-    end
-
-    def default(:action_id) do
-      {:ok, ""}
-    end
-
-    def default(_) do
-      {:error, :no_such_field}
-    end
+    def default(field_name), do: Protox.MessageSchema.default(@schema, field_name)
   )
-
-  @spec schema() :: Protox.MessageSchema.t()
-  def schema() do
-    %{
-      __struct__: Protox.MessageSchema,
-      fields: %{
-        action_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :action_id,
-          tag: 1,
-          type: :string
-        },
-        failure_code: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :failure_code,
-          tag: 4,
-          type: :string
-        },
-        message_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :message_id,
-          tag: 2,
-          type: :string
-        },
-        occurred_at: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: nil},
-          label: :optional,
-          name: :occurred_at,
-          tag: 5,
-          type: {:message, Google.Protobuf.Timestamp}
-        },
-        state: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: :MESSAGE_STATE_UNSPECIFIED},
-          label: :optional,
-          name: :state,
-          tag: 3,
-          type: {:enum, Interchat.TrustAndSafety.V2.MessageState}
-        }
-      },
-      file_options: nil,
-      name: Interchat.TrustAndSafety.V2.PrismDeliveryCallback,
-      syntax: :proto3
-    }
-  end
 end

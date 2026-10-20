@@ -7,84 +7,46 @@ defmodule Interchat.TrustAndSafety.V2.MessageState do
 
   (
     @spec default() :: :MESSAGE_STATE_UNSPECIFIED
-    def default() do
-      :MESSAGE_STATE_UNSPECIFIED
-    end
+    def default(), do: :MESSAGE_STATE_UNSPECIFIED
   )
 
   @spec encode(atom() | String.t()) :: integer() | atom()
-  def encode(:MESSAGE_STATE_UNSPECIFIED) do
-    0
-  end
+  def encode(:MESSAGE_STATE_UNSPECIFIED), do: 0
 
-  def encode(:MESSAGE_STATE_PENDING_MODERATION) do
-    1
-  end
+  def encode(:MESSAGE_STATE_PENDING_MODERATION), do: 1
 
-  def encode(:MESSAGE_STATE_APPROVED_PENDING_DELIVERY) do
-    2
-  end
+  def encode(:MESSAGE_STATE_APPROVED_PENDING_DELIVERY), do: 2
 
-  def encode(:MESSAGE_STATE_ACTIVE) do
-    3
-  end
+  def encode(:MESSAGE_STATE_ACTIVE), do: 3
 
-  def encode(:MESSAGE_STATE_BLOCKED) do
-    4
-  end
+  def encode(:MESSAGE_STATE_BLOCKED), do: 4
 
-  def encode(:MESSAGE_STATE_HELD) do
-    5
-  end
+  def encode(:MESSAGE_STATE_HELD), do: 5
 
-  def encode(:MESSAGE_STATE_EXPIRED) do
-    6
-  end
+  def encode(:MESSAGE_STATE_EXPIRED), do: 6
 
-  def encode(:MESSAGE_STATE_DELIVERY_FAILED) do
-    7
-  end
+  def encode(:MESSAGE_STATE_DELIVERY_FAILED), do: 7
 
-  def encode(x) do
-    x
-  end
+  def encode(x), do: x
 
   @spec decode(integer()) :: atom() | integer()
-  def decode(0) do
-    :MESSAGE_STATE_UNSPECIFIED
-  end
+  def decode(0), do: :MESSAGE_STATE_UNSPECIFIED
 
-  def decode(1) do
-    :MESSAGE_STATE_PENDING_MODERATION
-  end
+  def decode(1), do: :MESSAGE_STATE_PENDING_MODERATION
 
-  def decode(2) do
-    :MESSAGE_STATE_APPROVED_PENDING_DELIVERY
-  end
+  def decode(2), do: :MESSAGE_STATE_APPROVED_PENDING_DELIVERY
 
-  def decode(3) do
-    :MESSAGE_STATE_ACTIVE
-  end
+  def decode(3), do: :MESSAGE_STATE_ACTIVE
 
-  def decode(4) do
-    :MESSAGE_STATE_BLOCKED
-  end
+  def decode(4), do: :MESSAGE_STATE_BLOCKED
 
-  def decode(5) do
-    :MESSAGE_STATE_HELD
-  end
+  def decode(5), do: :MESSAGE_STATE_HELD
 
-  def decode(6) do
-    :MESSAGE_STATE_EXPIRED
-  end
+  def decode(6), do: :MESSAGE_STATE_EXPIRED
 
-  def decode(7) do
-    :MESSAGE_STATE_DELIVERY_FAILED
-  end
+  def decode(7), do: :MESSAGE_STATE_DELIVERY_FAILED
 
-  def decode(x) do
-    x
-  end
+  def decode(x), do: x
 
   @spec constants() :: [{integer(), atom()}]
   def constants() do
@@ -102,40 +64,22 @@ defmodule Interchat.TrustAndSafety.V2.MessageState do
 
   @spec has_constant?(any()) :: boolean()
   (
-    def has_constant?(:MESSAGE_STATE_UNSPECIFIED) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_UNSPECIFIED), do: true
 
-    def has_constant?(:MESSAGE_STATE_PENDING_MODERATION) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_PENDING_MODERATION), do: true
 
-    def has_constant?(:MESSAGE_STATE_APPROVED_PENDING_DELIVERY) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_APPROVED_PENDING_DELIVERY), do: true
 
-    def has_constant?(:MESSAGE_STATE_ACTIVE) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_ACTIVE), do: true
 
-    def has_constant?(:MESSAGE_STATE_BLOCKED) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_BLOCKED), do: true
 
-    def has_constant?(:MESSAGE_STATE_HELD) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_HELD), do: true
 
-    def has_constant?(:MESSAGE_STATE_EXPIRED) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_EXPIRED), do: true
 
-    def has_constant?(:MESSAGE_STATE_DELIVERY_FAILED) do
-      true
-    end
+    def has_constant?(:MESSAGE_STATE_DELIVERY_FAILED), do: true
 
-    def has_constant?(_) do
-      false
-    end
+    def has_constant?(_value), do: false
   )
 end

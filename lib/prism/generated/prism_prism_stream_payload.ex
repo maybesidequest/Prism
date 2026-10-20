@@ -3,7 +3,7 @@
 defmodule Prism.PrismStreamPayload do
   @moduledoc false
   if function_exported?(Protox, :check_generator_version, 1) do
-    Protox.check_generator_version(1)
+    Protox.check_generator_version(2)
   else
     raise "This code was generated with protox 2 but the runtime is using an older version of protox."
   end
@@ -34,6 +34,29 @@ defmodule Prism.PrismStreamPayload do
             __uf__: []
 
   (
+    @schema Protox.MessageSchema.expand!(
+              Prism.PrismStreamPayload,
+              :proto3,
+              [
+                {:action, 2, :optional, {:scalar, ""}, :string},
+                {:action_id, 10, :proto3_optional, {:oneof, :_action_id}, :string},
+                {:batch_id, 1, :optional, {:scalar, ""}, :string},
+                {:hub_id, 5, :proto3_optional, {:oneof, :_hub_id}, :string},
+                {:hub_name, 6, :proto3_optional, {:oneof, :_hub_name}, :string},
+                {:message_id, 3, :proto3_optional, {:oneof, :_message_id}, :string},
+                {:metadata, 9, :proto3_optional, {:oneof, :_metadata},
+                 {:message, Prism.PrismStreamMetadata}},
+                {:payload, 7, :optional, {:scalar, ""}, :string},
+                {:shard_index, 4, :proto3_optional, {:oneof, :_shard_index}, :int32},
+                {:targets, 8, :repeated, :unpacked, {:message, Prism.PrismTarget}}
+              ],
+              nil
+            )
+    @spec schema() :: Protox.MessageSchema.t()
+    def schema(), do: @schema
+  )
+
+  (
     (
       @spec encode(t()) :: {:ok, iodata(), non_neg_integer()} | {:error, any()}
       def encode(msg) do
@@ -44,7 +67,19 @@ defmodule Prism.PrismStreamPayload do
 
       @spec encode!(t()) :: {iodata(), non_neg_integer()} | no_return()
       def encode!(msg) do
-        {_acc = [], _acc_size = 0}
+        encode_internal!(msg)
+      rescue
+        e in [Protox.EncodingError, Protox.RequiredFieldsError] ->
+          reraise e, __STACKTRACE__
+
+        e ->
+          encode_diagnose!(msg)
+          reraise e, __STACKTRACE__
+      end
+
+      @doc false
+      def encode_internal!(msg) do
+        {[], 0}
         |> encode_action_id(msg)
         |> encode_metadata(msg)
         |> encode_hub_name(msg)
@@ -60,174 +95,200 @@ defmodule Prism.PrismStreamPayload do
     )
 
     defp encode_action_id({acc, acc_size}, msg) do
-      case msg.action_id do
+      case :erlang.map_get(:action_id, msg) do
         nil ->
           {acc, acc_size}
 
         child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_string(child_field_value)
-          {["R", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          (
+            delimited = child_field_value
+            delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+          )
+
+          {["R", delimited_prefix, delimited | acc],
+           acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:action_id, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_metadata({acc, acc_size}, msg) do
-      case msg.metadata do
+      case :erlang.map_get(:metadata, msg) do
         nil ->
           {acc, acc_size}
 
         child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_message(child_field_value)
-          {["J", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          (
+            %{__struct__: Prism.PrismStreamMetadata} = child = child_field_value
+            {child_bytes, child_size} = Prism.PrismStreamMetadata.encode_internal!(child)
+            child_size_bytes = Protox.Varint.encode(child_size)
+          )
+
+          {["J", child_size_bytes, child_bytes | acc],
+           acc_size + 1 + (byte_size(child_size_bytes) + child_size)}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:metadata, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_targets({acc, acc_size}, msg) do
-      case msg.targets do
+      case :erlang.map_get(:targets, msg) do
         [] ->
           {acc, acc_size}
 
         values ->
-          {value_bytes, value_size} =
-            (
-              {value_bytes, value_size} =
-                Enum.reduce(values, {_local_acc = [], _local_acc_size = 0}, fn value,
-                                                                               {local_acc,
-                                                                                local_acc_size} ->
-                  {value_bytes, value_bytes_size} = Protox.Encode.encode_message(value)
-                  {[value_bytes, "B" | local_acc], local_acc_size + 1 + value_bytes_size}
-                end)
-
-              {Enum.reverse(value_bytes), value_size}
-            )
-
+          {value_bytes, value_size} = encode_repeated_8(values, [], 0)
           {[value_bytes | acc], acc_size + value_size}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:targets, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_payload({acc, acc_size}, msg) do
-      if msg.payload == "" do
+      if :erlang.map_get(:payload, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.payload)
-        {[":", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:payload, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {[":", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:payload, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_hub_name({acc, acc_size}, msg) do
-      case msg.hub_name do
+      case :erlang.map_get(:hub_name, msg) do
         nil ->
           {acc, acc_size}
 
         child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_string(child_field_value)
-          {["2", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          (
+            delimited = child_field_value
+            delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+          )
+
+          {["2", delimited_prefix, delimited | acc],
+           acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:hub_name, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_hub_id({acc, acc_size}, msg) do
-      case msg.hub_id do
+      case :erlang.map_get(:hub_id, msg) do
         nil ->
           {acc, acc_size}
 
         child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_string(child_field_value)
-          {["*", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          (
+            delimited = child_field_value
+            delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+          )
+
+          {["*", delimited_prefix, delimited | acc],
+           acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:hub_id, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_shard_index({acc, acc_size}, msg) do
-      case msg.shard_index do
+      case :erlang.map_get(:shard_index, msg) do
         nil ->
           {acc, acc_size}
 
         child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_int32(child_field_value)
-          {[" ", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          (
+            value = child_field_value
+
+            value_bytes =
+              if value >= 0 do
+                Protox.Varint.encode(:erlang.band(value, 4_294_967_295))
+              else
+                Protox.Varint.encode(:erlang.band(value, 18_446_744_073_709_551_615))
+              end
+          )
+
+          {[" ", value_bytes | acc], acc_size + 1 + byte_size(value_bytes)}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:shard_index, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_message_id({acc, acc_size}, msg) do
-      case msg.message_id do
+      case :erlang.map_get(:message_id, msg) do
         nil ->
           {acc, acc_size}
 
         child_field_value ->
-          {value_bytes, value_bytes_size} = Protox.Encode.encode_string(child_field_value)
-          {["\x1A", value_bytes | acc], acc_size + 1 + value_bytes_size}
+          (
+            delimited = child_field_value
+            delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+          )
+
+          {["\x1A", delimited_prefix, delimited | acc],
+           acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:message_id, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_action({acc, acc_size}, msg) do
-      if msg.action == "" do
+      if :erlang.map_get(:action, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.action)
-        {["\x12", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:action, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\x12", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:action, "invalid field value"), __STACKTRACE__
     end
 
     defp encode_batch_id({acc, acc_size}, msg) do
-      if msg.batch_id == "" do
+      if :erlang.map_get(:batch_id, msg) == "" do
         {acc, acc_size}
       else
-        {value_bytes, value_bytes_size} = Protox.Encode.encode_string(msg.batch_id)
-        {["\n", value_bytes | acc], acc_size + 1 + value_bytes_size}
+        (
+          delimited = :erlang.map_get(:batch_id, msg)
+          delimited_prefix = Protox.Encode.encode_string_prefix(delimited)
+        )
+
+        {["\n", delimited_prefix, delimited | acc],
+         acc_size + 1 + (byte_size(delimited_prefix) + byte_size(delimited))}
       end
-    rescue
-      ArgumentError ->
-        reraise Protox.EncodingError.new(:batch_id, "invalid field value"), __STACKTRACE__
     end
 
-    defp encode_unknown_fields({acc, acc_size}, msg) do
-      Enum.reduce(msg.__uf__, {acc, acc_size}, fn {tag, wire_type, bytes}, {acc, acc_size} ->
-        case wire_type do
-          0 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :int32)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
+    (
+      defp encode_repeated_8([], acc, size), do: {acc, size}
 
-          1 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :double)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
+      defp encode_repeated_8([value | rest], acc, size) do
+        (
+          (
+            %{__struct__: Prism.PrismTarget} = child = value
+            {child_bytes, child_size} = Prism.PrismTarget.encode_internal!(child)
+            child_size_bytes = Protox.Varint.encode(child_size)
+          )
 
-          2 ->
-            {len_bytes, len_size} = bytes |> byte_size() |> Protox.Varint.encode()
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :packed)
+          value_bytes = [child_size_bytes, child_bytes]
+          value_bytes_size = byte_size(child_size_bytes) + child_size
+        )
 
-            {[acc, <<key_bytes::binary, len_bytes::binary, bytes::binary>>],
-             acc_size + key_size + len_size + byte_size(bytes)}
+        encode_repeated_8(rest, [acc, "B", value_bytes], size + 1 + value_bytes_size)
+      end
+    )
 
-          5 ->
-            {key_bytes, key_size} = Protox.Encode.make_key_bytes(tag, :float)
-            {[acc, <<key_bytes::binary, bytes::binary>>], acc_size + key_size + byte_size(bytes)}
-        end
-      end)
+    (
+      defp encode_diagnose!(%{__struct__: __MODULE__} = msg) do
+        Protox.Encode.find_invalid_field!(msg, [
+          {:action_id, &encode_action_id/2, nil},
+          {:metadata, &encode_metadata/2, Prism.PrismStreamMetadata},
+          {:hub_name, &encode_hub_name/2, nil},
+          {:hub_id, &encode_hub_id/2, nil},
+          {:shard_index, &encode_shard_index/2, nil},
+          {:message_id, &encode_message_id/2, nil},
+          {:targets, &encode_targets/2, Prism.PrismTarget},
+          {:payload, &encode_payload/2, nil},
+          {:action, &encode_action/2, nil},
+          {:batch_id, &encode_batch_id/2, nil}
+        ])
+      end
+
+      defp encode_diagnose!(_malformed_input), do: :ok
+    )
+
+    defp encode_unknown_fields(acc, msg) do
+      Protox.Encode.encode_unknown_fields(acc, :erlang.map_get(:__uf__, msg))
     end
   )
 
@@ -243,262 +304,127 @@ defmodule Prism.PrismStreamPayload do
 
       (
         @spec decode!(binary()) :: t() | no_return()
-        def decode!(bytes) do
-          parse_key_value(bytes, struct(Prism.PrismStreamPayload))
-        end
+        def decode!(bytes), do: parse_key_value(bytes, __struct__())
       )
     )
 
     (
       @spec parse_key_value(binary(), struct()) :: struct()
       defp parse_key_value(<<>>, msg) do
-        %{msg | targets: Enum.reverse(msg.targets), __uf__: Enum.reverse(msg.__uf__)}
+        msg =
+          case :erlang.map_get(:targets, msg) do
+            [_first, _second | _tail] = values -> %{msg | targets: :lists.reverse(values)}
+            _empty_or_single -> msg
+          end
+
+        case :erlang.map_get(:__uf__, msg) do
+          [_first, _second | _tail] = values -> %{msg | __uf__: :lists.reverse(values)}
+          _empty_or_single -> msg
+        end
       end
 
       defp parse_key_value(bytes, msg) do
-        {field, rest} =
-          case bytes do
-            <<_::5, 3::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 3")
+        case bytes do
+          <<_tag::5, 3::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 3")
 
-            <<_::5, 4::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 4")
+          <<_tag::5, 4::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 4")
 
-            <<_::5, 6::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 6")
+          <<_tag::5, 6::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 6")
 
-            <<_::5, 7::3, _rest::binary>> ->
-              raise Protox.DecodingError.new(bytes, "invalid wire type 7")
+          <<_tag::5, 7::3, _rest::binary>> ->
+            raise Protox.DecodingError.new(bytes, "invalid wire type 7")
 
-            <<0::5, _::3, _rest::binary>> ->
-              raise %Protox.IllegalTagError{}
+          <<0::5, _wire_type::3, _rest::binary>> ->
+            raise %Protox.IllegalTagError{}
 
-            <<10::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[action_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<"R", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | action_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<9::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[metadata: Prism.PrismStreamMetadata.decode!(delimited)], rest}
+          <<"J", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | metadata: Prism.PrismStreamMetadata.decode!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<8::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[targets: [Prism.PrismTarget.decode!(delimited) | msg.targets]], rest}
+          <<"B", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
 
-            <<7::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[payload: Protox.Decode.validate_string!(delimited)], rest}
+            msg = %{
+              msg
+              | targets: [Prism.PrismTarget.decode!(delimited) | :erlang.map_get(:targets, msg)]
+            }
 
-            <<6::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[hub_name: Protox.Decode.validate_string!(delimited)], rest}
+            parse_key_value(rest, msg)
 
-            <<5::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[hub_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<":", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | payload: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<4::5, _wire_type::3, bytes::binary>> ->
-              {value, rest} = Protox.Decode.parse_int32(bytes)
-              {[shard_index: value], rest}
+          <<"2", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | hub_name: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<3::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[message_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<"*", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | hub_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-            <<2::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[action: Protox.Decode.validate_string!(delimited)], rest}
+          <<" ", 0::1, varint_value::7, rest::binary>> ->
+            value = varint_value
+            msg = %{msg | shard_index: value}
+            parse_key_value(rest, msg)
 
-            <<1::5, 2::3, bytes::binary>> ->
-              {len, bytes} = Protox.Varint.decode(bytes)
-              {delimited, rest} = Protox.Decode.parse_delimited(bytes, len)
-              {[batch_id: Protox.Decode.validate_string!(delimited)], rest}
+          <<" ", bytes::binary>> ->
+            {value, rest} = Protox.Decode.parse_int32(bytes)
+            msg = %{msg | shard_index: value}
+            parse_key_value(rest, msg)
 
-            <<bytes::binary>> ->
-              {tag, wire_type, rest} = Protox.Decode.parse_key(bytes)
-              {value, rest} = Protox.Decode.parse_unknown(tag, wire_type, rest)
-              {[__uf__: [value | msg.__uf__]], rest}
-          end
+          <<"\x1A", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | message_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
 
-        msg_updated = struct(msg, field)
-        parse_key_value(rest, msg_updated)
+          <<"\x12", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | action: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
+
+          <<"\n", bytes::binary>> ->
+            {delimited, rest} = Protox.Decode.parse_delimited(bytes)
+            msg = %{msg | batch_id: Protox.Decode.validate_string!(delimited)}
+            parse_key_value(rest, msg)
+
+          <<bytes::binary>> ->
+            {tag, wire_type, rest} = Protox.Decode.parse_key(bytes)
+            {value, rest} = Protox.Decode.parse_unknown(tag, wire_type, rest)
+            msg = %{msg | __uf__: [value | :erlang.map_get(:__uf__, msg)]}
+            parse_key_value(rest, msg)
+        end
       end
     )
   )
 
   (
     @spec unknown_fields(struct()) :: [{non_neg_integer(), Protox.Types.tag(), binary()}]
-    def unknown_fields(msg) do
-      msg.__uf__
-    end
+    def unknown_fields(msg), do: msg.__uf__
 
     @spec unknown_fields_name() :: :__uf__
-    def unknown_fields_name() do
-      :__uf__
-    end
+    def unknown_fields_name(), do: :__uf__
 
     @spec clear_unknown_fields(struct) :: struct
-    def clear_unknown_fields(msg) do
-      struct!(msg, __uf__: [])
-    end
+    def clear_unknown_fields(msg), do: struct!(msg, __uf__: [])
   )
 
   (
     @spec default(atom()) ::
-            {:ok, boolean() | integer() | String.t() | float()}
+            {:ok, Protox.Scalar.scalar_default_value_type()}
             | {:error, :no_such_field | :no_default_value}
-    def default(:action_id) do
-      {:error, :no_default_value}
-    end
-
-    def default(:metadata) do
-      {:error, :no_default_value}
-    end
-
-    def default(:targets) do
-      {:error, :no_default_value}
-    end
-
-    def default(:payload) do
-      {:ok, ""}
-    end
-
-    def default(:hub_name) do
-      {:error, :no_default_value}
-    end
-
-    def default(:hub_id) do
-      {:error, :no_default_value}
-    end
-
-    def default(:shard_index) do
-      {:error, :no_default_value}
-    end
-
-    def default(:message_id) do
-      {:error, :no_default_value}
-    end
-
-    def default(:action) do
-      {:ok, ""}
-    end
-
-    def default(:batch_id) do
-      {:ok, ""}
-    end
-
-    def default(_) do
-      {:error, :no_such_field}
-    end
+    def default(field_name), do: Protox.MessageSchema.default(@schema, field_name)
   )
-
-  @spec schema() :: Protox.MessageSchema.t()
-  def schema() do
-    %{
-      __struct__: Protox.MessageSchema,
-      fields: %{
-        action: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :action,
-          tag: 2,
-          type: :string
-        },
-        action_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.OneOf, parent: :_action_id},
-          label: :proto3_optional,
-          name: :action_id,
-          tag: 10,
-          type: :string
-        },
-        batch_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :batch_id,
-          tag: 1,
-          type: :string
-        },
-        hub_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.OneOf, parent: :_hub_id},
-          label: :proto3_optional,
-          name: :hub_id,
-          tag: 5,
-          type: :string
-        },
-        hub_name: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.OneOf, parent: :_hub_name},
-          label: :proto3_optional,
-          name: :hub_name,
-          tag: 6,
-          type: :string
-        },
-        message_id: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.OneOf, parent: :_message_id},
-          label: :proto3_optional,
-          name: :message_id,
-          tag: 3,
-          type: :string
-        },
-        metadata: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.OneOf, parent: :_metadata},
-          label: :proto3_optional,
-          name: :metadata,
-          tag: 9,
-          type: {:message, Prism.PrismStreamMetadata}
-        },
-        payload: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.Scalar, default_value: ""},
-          label: :optional,
-          name: :payload,
-          tag: 7,
-          type: :string
-        },
-        shard_index: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: %{__struct__: Protox.OneOf, parent: :_shard_index},
-          label: :proto3_optional,
-          name: :shard_index,
-          tag: 4,
-          type: :int32
-        },
-        targets: %{
-          __struct__: Protox.Field,
-          extender: nil,
-          kind: :unpacked,
-          label: :repeated,
-          name: :targets,
-          tag: 8,
-          type: {:message, Prism.PrismTarget}
-        }
-      },
-      file_options: nil,
-      name: Prism.PrismStreamPayload,
-      syntax: :proto3
-    }
-  end
 end

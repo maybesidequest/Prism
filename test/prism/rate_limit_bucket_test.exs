@@ -3,28 +3,20 @@ defmodule Prism.RateLimit.BucketTest do
 
   alias Prism.RateLimit.Bucket
 
-  @redis_uri "redis://localhost:6379"
-
   setup do
     # Ensure the Redix pool is available for rate_limit_bucket calls.
     for i <- 0..4 do
-      case Redix.start_link(@redis_uri, name: :"my_redix_#{i}") do
+      case Redix.start_link(Prism.TestRedis.uri(), name: :"my_redix_#{i}") do
         {:ok, _} -> :ok
         {:error, {:already_started, _}} -> :ok
       end
     end
 
     # Build a standalone connection for direct Redis inspection.
-    {:ok, redix} = Redix.start_link(@redis_uri)
+    {:ok, redix} = Redix.start_link(Prism.TestRedis.uri())
 
     # Clean up rate-limit bucket keys from prior runs.
-    case Redix.command(redix, ["KEYS", "prism:rl:*"]) do
-      {:ok, keys} when is_list(keys) and length(keys) > 0 ->
-        Redix.command!(redix, ["DEL" | keys])
-
-      _ ->
-        :ok
-    end
+    Prism.TestRedis.delete_matching(redix, "prism:rl:*")
 
     %{redix: redix}
   end

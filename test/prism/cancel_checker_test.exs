@@ -4,7 +4,7 @@ defmodule Prism.CancelCheckerTest do
   alias Prism.CancelChecker
 
   setup do
-    {:ok, redix} = Redix.start_link("redis://localhost:6379", sync_connect: true)
+    {:ok, redix} = Redix.start_link(Prism.TestRedis.uri(), sync_connect: true)
     %{redix: redix}
   end
 

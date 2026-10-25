@@ -70,21 +70,33 @@ jobs:
 
       - name: Determine tags and environment
         id: vars
+        # Inputs arrive through env, never spliced into the script, so a crafted
+        # value cannot run as shell.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION_TAG: ${{ github.event.inputs.version_tag }}
+          INPUT_ENVIRONMENT: ${{ github.event.inputs.environment }}
+          SHA: ${{ github.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "float_tag=latest" >> $GITHUB_OUTPUT
-            echo "version_tag=ghcr.io/maybesidequest/prism:${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event.inputs.version_tag }}" != "" ]]; then
-            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
-            echo "float_tag=latest" >> $GITHUB_OUTPUT
-            echo "version_tag=ghcr.io/maybesidequest/prism:${{ github.event.inputs.version_tag }}" >> $GITHUB_OUTPUT
+          valid_tag='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            [[ "$REF_NAME" =~ $valid_tag ]] || { echo "release tag is not a valid image tag" >&2; exit 1; }
+            echo "environment=prod" >> "$GITHUB_OUTPUT"
+            echo "float_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "version_tag=ghcr.io/maybesidequest/prism:${REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$INPUT_VERSION_TAG" ]]; then
+            [[ "$INPUT_VERSION_TAG" =~ $valid_tag ]] || { echo "version_tag is not a valid image tag" >&2; exit 1; }
+            [[ "$INPUT_ENVIRONMENT" == "prod" || "$INPUT_ENVIRONMENT" == "staging" ]] || { echo "environment must be prod or staging" >&2; exit 1; }
+            echo "environment=${INPUT_ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+            echo "float_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "version_tag=ghcr.io/maybesidequest/prism:${INPUT_VERSION_TAG}" >> "$GITHUB_OUTPUT"
           else
-            echo "environment=staging" >> $GITHUB_OUTPUT
-            echo "float_tag=staging" >> $GITHUB_OUTPUT
-            echo "version_tag=" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+            echo "float_tag=staging" >> "$GITHUB_OUTPUT"
+            echo "version_tag=" >> "$GITHUB_OUTPUT"
           fi
-          echo "sha_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "sha_tag=${SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -104,10 +116,10 @@ jobs:
       - name: Update GitOps repo
         env:
           GITOPS_PAT: ${{ secrets.GITOPS_PAT }}
+          ENV: ${{ steps.vars.outputs.environment }}
+          SHA: ${{ steps.vars.outputs.sha_tag }}
         run: |
           APP_DIR="prism"
-          ENV="${{ steps.vars.outputs.environment }}"
-          SHA="${{ steps.vars.outputs.sha_tag }}"
 
           git clone --depth 1 \
             "https://x-access-token:${GITOPS_PAT}@github.com/maybesidequest/interchat-kube-talos.git" \
@@ -123,4 +135,15 @@ jobs:
           git config user.email "ci-bot@interchat.fun"
           git add "$KUSTOMIZATION"
           git commit -m "deploy(${APP_DIR}-${ENV}): ${SHA}" || echo "No changes to commit"
-          git push origin main
+          # Other services push deploy commits to the same branch; rebase onto
+          # theirs and retry instead of failing the release on a race.
+          for attempt in 1 2 3 4 5; do
+            if git push origin main; then
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); rebasing and retrying" >&2
+            sleep $((attempt * 2))
+            git pull --rebase origin main
+          done
+          echo "could not push the GitOps update after 5 attempts" >&2
+          exit 1

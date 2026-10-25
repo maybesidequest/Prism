@@ -9,7 +9,7 @@ defmodule Prism.DelayedQueueTest do
     pubsub_channel = Prism.Config.pubsub_channel()
 
     # Ensure Redis is clean before each test to prevent cross-test contamination
-    {:ok, redix_conn} = Redix.start_link("redis://localhost:6379", sync_connect: true)
+    {:ok, redix_conn} = Redix.start_link(Prism.TestRedis.uri(), sync_connect: true)
     Redix.command!(redix_conn, ["DEL", zset_key, stream_key])
 
     # Subscribe to pubsub for assertions

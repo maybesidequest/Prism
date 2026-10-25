@@ -8,7 +8,7 @@ defmodule Prism.DelayedSchedulerTest do
     stream_key = Prism.Config.stream_retries()
     pubsub_channel = Prism.Config.pubsub_channel()
 
-    {:ok, redix_conn} = Redix.start_link("redis://localhost:6379", sync_connect: true)
+    {:ok, redix_conn} = Redix.start_link(Prism.TestRedis.uri(), sync_connect: true)
     Redix.command!(redix_conn, ["DEL", zset_key, stream_key])
 
     # Start a test-specific scheduler (the global one was stopped in test_helper)

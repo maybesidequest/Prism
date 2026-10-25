@@ -7,7 +7,7 @@ defmodule Prism.EventBusTest do
   @consumer_group "test-consumer-group"
 
   setup do
-    {:ok, redix_conn} = Redix.start_link("redis://localhost:6379", sync_connect: true)
+    {:ok, redix_conn} = Redix.start_link(Prism.TestRedis.uri(), sync_connect: true)
 
     # Use a unique stream key per test to prevent cross-contamination
     test_id = System.unique_integer([:positive, :monotonic])

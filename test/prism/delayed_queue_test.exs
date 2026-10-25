@@ -123,6 +123,27 @@ defmodule Prism.DelayedQueueTest do
       refute "{\"id\": 3}" in payloads
     end
 
+    test "migrates a backlog larger than Lua's unpack limit in one call", %{
+      redix_conn: redix_conn,
+      stream_key: stream_key,
+      zset_key: zset_key
+    } do
+      now = :os.system_time(:millisecond)
+      backlog = 10_000
+
+      for chunk <- Enum.chunk_every(1..backlog, 1000) do
+        members = Enum.flat_map(chunk, fn i -> [to_string(now - i), ~s({"id": #{i}})] end)
+        Redix.command!(redix_conn, ["ZADD", zset_key | members])
+      end
+
+      Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 5000), ~s({"id": "later"})])
+
+      assert {:ok, next_score} = DelayedQueue.migrate_due_items(now)
+      assert next_score == now + 5000
+      assert 1 = Redix.command!(redix_conn, ["ZCARD", zset_key])
+      assert backlog == Redix.command!(redix_conn, ["XLEN", stream_key])
+    end
+
     test "returns nil when there are no items left" do
       # Item 1: Due
       assert :ok = DelayedQueue.enqueue(%{"id" => 1}, 0)

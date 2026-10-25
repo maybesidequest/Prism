@@ -6,6 +6,8 @@ defmodule Prism.DelayedQueue do
 
   alias Prism.Helpers
 
+  @migrate_batch_size 500
+
   @doc """
   Enqueues a payload for delayed execution.
   `delay_ms` is the number of milliseconds to wait.
@@ -69,16 +71,21 @@ defmodule Prism.DelayedQueue do
     local zset_key = KEYS[1]
     local stream_key = KEYS[2]
     local now_ms = tonumber(ARGV[1])
+    local batch_size = tonumber(ARGV[2])
 
-    local due_items = redis.call("ZRANGEBYSCORE", zset_key, "-inf", now_ms)
-
-    if #due_items > 0 then
-      redis.call("ZREM", zset_key, unpack(due_items))
+    -- Move due items in bounded batches. An unbounded unpack() fails past
+    -- Lua's stack limit (~8000 items), which would wedge the whole backlog.
+    repeat
+      local due_items = redis.call("ZRANGEBYSCORE", zset_key, "-inf", now_ms, "LIMIT", 0, batch_size)
 
       for i, item in ipairs(due_items) do
         redis.call("XADD", stream_key, "*", "payload", item)
       end
-    end
+
+      if #due_items > 0 then
+        redis.call("ZREM", zset_key, unpack(due_items))
+      end
+    until #due_items < batch_size
 
     local next_earliest = redis.call("ZRANGE", zset_key, 0, 0, "WITHSCORES")
     if #next_earliest > 0 then
@@ -94,7 +101,8 @@ defmodule Prism.DelayedQueue do
            "2",
            zset_key,
            stream_key,
-           to_string(now_ms)
+           to_string(now_ms),
+           to_string(@migrate_batch_size)
          ]) do
       {:ok, nil} ->
         {:ok, nil}

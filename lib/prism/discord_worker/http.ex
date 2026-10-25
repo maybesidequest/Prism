@@ -290,11 +290,16 @@ defmodule Prism.DiscordWorker.HTTP do
 
         {:ok, %{status: status, body: resp_body, headers: resp_headers}} ->
           Logger.warning(
-            "Unexpected status #{status} for webhook_id=#{webhook_id}. " <>
+            "Unexpected status #{status} for webhook_id=#{webhook_id}; treating as permanent failure. " <>
               "Headers: #{inspect(resp_headers)} | Body: #{resp_body}"
           )
 
-          {:ok, nil}
+          # Discord did not accept the request, so it must not be reported as
+          # delivered. None of these statuses is one a retry would fix.
+          if status in 400..499 and Prism.Config.congestion_control_enabled?(),
+            do: Prism.CongestionWindow.record_4xx()
+
+          {:error, :permanent}
       end
     end
   end

@@ -46,7 +46,6 @@ prism/
 │   │   ├── rate_limit.ex             # Public facade for all rate-limit operations
 │   │   ├── redis_client.ex           # OffBroadwayRedisStream client adapter
 │   │   ├── retry_broadway.ex         # Retry stream consumer
-│   │   ├── schema_registry.ex        # Runtime event/schema validation
 │   │   └── stream_trimmer.ex         # Periodic stream XTRIM (gated)
 │   └── prism.ex
 ├── config/                           # Elixir compile-time configurations

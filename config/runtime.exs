@@ -168,7 +168,6 @@ if config_env() != :test do
     cwnd_4xx_safe_pct: env!("PRISM_CWND_4XX_SAFE_PCT", :float, 0.3),
     cwnd_4xx_critical_pct: env!("PRISM_CWND_4XX_CRITICAL_PCT", :float, 0.8),
     cwnd_4xx_prune_interval_ms: env!("PRISM_CWND_4XX_PRUNE_INTERVAL_MS", :integer, 10000),
-    schema_registry_url: env!("SCHEMA_REGISTRY_URL", :string, "http://localhost:8081"),
     kafka_brokers: kafka_config.brokers,
     kafka_client_config: kafka_config.client_config,
     kafka_brod_client_config: kafka_config.brod_client_config

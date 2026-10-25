@@ -125,7 +125,6 @@ defmodule Prism.Application do
           {Prism.RateLimit.InvalidRequestTracker, []},
           {Prism.CongestionWindow, []},
           {Prism.DelayedScheduler, []},
-          {Prism.SchemaRegistry, []},
           {Prism.StreamTrimmer, []}
           # Spawn N parallel FanoutBroadway producers to parallelize XREADGROUP fetches.
           # Each instance owns its own Redix connection; they share the consumer group

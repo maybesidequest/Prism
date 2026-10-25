@@ -38,6 +38,7 @@ defmodule Prism.DeliveryCallbackContractTest do
     previous_include_parent = Application.get_env(:prism, :callback_include_parent_message_id)
     previous_preflight = Application.get_env(:prism, :preflight_batching_enabled)
     previous_max_retries = Application.get_env(:prism, :event_bus_max_retries)
+    previous_handoff_deadline = Application.get_env(:prism, :prism_handoff_deadline_ms)
 
     Application.put_env(
       :prism,
@@ -56,6 +57,7 @@ defmodule Prism.DeliveryCallbackContractTest do
       restore_env(:callback_include_parent_message_id, previous_include_parent)
       restore_env(:preflight_batching_enabled, previous_preflight)
       restore_env(:event_bus_max_retries, previous_max_retries)
+      restore_env(:prism_handoff_deadline_ms, previous_handoff_deadline)
     end)
 
     :ok
@@ -256,6 +258,40 @@ defmodule Prism.DeliveryCallbackContractTest do
 
     for _ <- 1..2 do
       assert_receive {:published, "prism.stream.jobs.retry", <<1, 2, 3>>, _maxlen, _headers}
+    end
+  end
+
+  test "a retry handoff that outlasts its deadline parks the job instead of pinning the processor" do
+    {:ok, redis} = Redix.start_link(Prism.TestRedis.uri(), sync_connect: true)
+    zset_key = Prism.Config.delayed_zset_key()
+    Redix.command!(redis, ["DEL", zset_key])
+    Application.put_env(:prism, :capture_transport_result, {:error, :broker_unavailable})
+    Application.put_env(:prism, :prism_handoff_deadline_ms, 50)
+
+    message = failed_job_message()
+    {elapsed_us, result} = :timer.tc(fn -> Prism.FanoutBroadway.handle_failed([message], %{}) end)
+
+    assert result == [message]
+    assert elapsed_us < 1_000_000
+    assert_receive {:published, "prism.stream.jobs.retry", <<1, 2, 3>>, _maxlen, _headers}
+    assert [parked] = Redix.command!(redis, ["ZRANGE", zset_key, 0, -1])
+
+    parked = Jason.decode!(parked)
+    assert Base.decode64!(parked["bytes"]) == <<1, 2, 3>>
+    assert parked["partition_key"] == "HUB:hub-1"
+    assert parked["headers"]["prism-retry-attempt"] == "1"
+    refute Map.has_key?(parked["headers"], "partition-key")
+
+    Redix.command!(redis, ["DEL", zset_key])
+  end
+
+  test "a DLQ handoff that outlasts its deadline fails loudly" do
+    Application.put_env(:prism, :capture_transport_result, {:error, :broker_unavailable})
+    Application.put_env(:prism, :prism_handoff_deadline_ms, 50)
+    Application.put_env(:prism, :event_bus_max_retries, 0)
+
+    assert_raise RuntimeError, ~r/DLQ handoff/, fn ->
+      Prism.FanoutBroadway.handle_failed([failed_job_message()], %{})
     end
   end
 

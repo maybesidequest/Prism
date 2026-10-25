@@ -175,8 +175,13 @@ defmodule Prism.FanoutBroadway do
   end
 
   defp handle_valid_message(data, message) do
-    wait_for_retry_deadline(message.metadata)
+    case defer_until_retry_deadline(message) do
+      :deferred -> message
+      :due -> handle_due_message(data, message)
+    end
+  end
 
+  defp handle_due_message(data, message) do
     if Prism.Config.backpressure_enabled?() and Prism.RateLimit.unhealthy?() do
       delay_ms = Prism.RateLimit.backoff_ms()
       publish_retry_job!(message, delay_ms, :backpressure)
@@ -407,6 +412,42 @@ defmodule Prism.FanoutBroadway do
     end
   end
 
+  # Waits up to this long inline; anything longer is parked in the delayed
+  # queue so the processor is free for other jobs meanwhile.
+  @inline_retry_wait_ms 1_000
+
+  defp defer_until_retry_deadline(message) do
+    case retry_delay_ms(message.metadata) do
+      0 ->
+        :due
+
+      delay_ms when delay_ms <= @inline_retry_wait_ms ->
+        Process.sleep(delay_ms)
+        :due
+
+      delay_ms ->
+        case park_in_delayed_queue(message, delay_ms) do
+          :ok ->
+            :deferred
+
+          {:error, reason} ->
+            Logger.error(
+              "Could not park Prism retry in the delayed queue; waiting inline: #{inspect(reason)}"
+            )
+
+            wait_for_retry_deadline(message.metadata)
+            :due
+        end
+    end
+  end
+
+  # The delayed queue hands a parked job back to the jobs topic with its
+  # headers intact, so it returns here once its deadline has passed.
+  defp park_in_delayed_queue(message, delay_ms) do
+    {payload_binary, _} = extract_payload_and_time(message.data)
+    Prism.DelayedQueue.enqueue(retry_payload(payload_binary, message.metadata), delay_ms)
+  end
+
   defp wait_for_retry_deadline(metadata) do
     case retry_delay_ms(metadata) do
       0 ->
@@ -448,6 +489,29 @@ defmodule Prism.FanoutBroadway do
       end,
       "retry"
     )
+    |> case do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        # Kafka offsets are committed for failed messages too, so failing
+        # here would drop the job. Keep it in the delayed queue instead; it
+        # re-enters the jobs topic once Kafka accepts writes again.
+        Logger.error(
+          "Kafka retry handoff for #{partition_key} gave up; parking it in the delayed queue: #{inspect(reason)}"
+        )
+
+        retry =
+          payload_binary
+          |> retry_payload(message.metadata)
+          |> Map.put("headers", Map.delete(headers, "partition-key"))
+          |> Map.put("partition_key", partition_key)
+
+        case Prism.DelayedQueue.enqueue(retry, max(delay_ms, 0)) do
+          :ok -> :ok
+          {:error, queue_error} -> raise "retry handoff failed: #{inspect({reason, queue_error})}"
+        end
+    end
   end
 
   defp retry_attempt(headers) do
@@ -483,9 +547,27 @@ defmodule Prism.FanoutBroadway do
       end,
       "DLQ"
     )
+    |> case do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise "DLQ handoff for #{retry["partition_key"]} (#{reason_code(headers)}) failed: #{inspect(reason)}"
+    end
   end
 
-  defp publish_until_ack(publish, label, attempt \\ 1) do
+  defp reason_code(headers), do: Map.get(headers, "prism-error-code", "unknown")
+
+  # Retries a mandatory Kafka handoff with capped exponential backoff, but
+  # only until the handoff deadline: an outage must not pin the processor.
+  defp publish_until_ack(publish, label) do
+    deadline =
+      System.monotonic_time(:millisecond) + Prism.EventBus.Config.prism_handoff_deadline_ms()
+
+    publish_until_ack(publish, label, 1, deadline)
+  end
+
+  defp publish_until_ack(publish, label, attempt, deadline) do
     result =
       try do
         publish.()
@@ -495,34 +577,37 @@ defmodule Prism.FanoutBroadway do
         kind, reason -> {:error, {kind, reason}}
       end
 
-    case result do
-      :ok ->
+    reason =
+      case result do
+        :ok -> nil
+        {:ok, _id} -> nil
+        {:error, reason} -> reason
+        other -> {:unexpected_result, other}
+      end
+
+    remaining_ms = deadline - System.monotonic_time(:millisecond)
+
+    cond do
+      is_nil(reason) ->
         :ok
 
-      {:ok, _id} ->
-        :ok
+      remaining_ms <= 0 ->
+        Logger.error(
+          "Mandatory Kafka #{label} handoff failed after #{attempt} attempts: #{inspect(reason)}"
+        )
 
-      {:error, reason} ->
+        {:error, reason}
+
+      true ->
         base = Prism.EventBus.Config.prism_handoff_retry_base_ms()
-        delay_ms = min(base * Integer.pow(2, min(attempt - 1, 6)), 5_000)
+        delay_ms = min(min(base * Integer.pow(2, min(attempt - 1, 6)), 5_000), remaining_ms)
 
         Logger.error(
           "Mandatory Kafka #{label} handoff failed; retrying after #{delay_ms}ms: #{inspect(reason)}"
         )
 
         Process.sleep(delay_ms)
-        publish_until_ack(publish, label, attempt + 1)
-
-      other ->
-        base = Prism.EventBus.Config.prism_handoff_retry_base_ms()
-        delay_ms = min(base * Integer.pow(2, min(attempt - 1, 6)), 5_000)
-
-        Logger.error(
-          "Mandatory Kafka #{label} handoff returned an unexpected result; retrying after #{delay_ms}ms: #{inspect(other)}"
-        )
-
-        Process.sleep(delay_ms)
-        publish_until_ack(publish, label, attempt + 1)
+        publish_until_ack(publish, label, attempt + 1, deadline)
     end
   end
 

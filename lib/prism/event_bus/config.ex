@@ -75,6 +75,10 @@ defmodule Prism.EventBus.Config do
   def prism_handoff_retry_base_ms,
     do: Application.get_env(:prism, :prism_handoff_retry_base_ms, 100)
 
+  @doc "How long a mandatory Kafka handoff retries before falling back"
+  def prism_handoff_deadline_ms,
+    do: Application.get_env(:prism, :prism_handoff_deadline_ms, 60_000)
+
   @doc "Transport backend module (production default: Prism.EventBus.Transport.Kafka)"
   def transport_backend,
     do: Application.get_env(:prism, :event_bus_transport_backend, Prism.EventBus.Transport.Kafka)

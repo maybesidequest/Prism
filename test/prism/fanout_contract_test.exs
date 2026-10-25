@@ -103,6 +103,32 @@ defmodule Prism.FanoutContractTest do
     assert first == "prism:ck:#{@action_id}:batch-1:webhook-1"
   end
 
+  test "a job whose retry deadline is far off is parked in the delayed queue, not slept on" do
+    {:ok, redis} = Redix.start_link(Prism.TestRedis.uri(), sync_connect: true)
+    zset_key = Prism.Config.delayed_zset_key()
+    Redix.command!(redis, ["DEL", zset_key])
+
+    not_before = System.system_time(:millisecond) + 60_000
+
+    message =
+      kafka_message(valid_payload(), [{"prism-not-before-ms", Integer.to_string(not_before)}])
+
+    {elapsed_us, result} =
+      :timer.tc(fn -> FanoutBroadway.handle_message(:default, message, %{}) end)
+
+    assert result == message
+    assert elapsed_us < 1_000_000
+    assert [parked, score] = Redix.command!(redis, ["ZRANGE", zset_key, 0, -1, "WITHSCORES"])
+    assert_in_delta String.to_integer(score), not_before, 1_000
+
+    parked = Jason.decode!(parked)
+    assert parked["type"] == "protobuf_batch"
+    assert Base.decode64!(parked["bytes"]) == message.data
+    assert parked["headers"]["prism-not-before-ms"] == Integer.to_string(not_before)
+
+    Redix.command!(redis, ["DEL", zset_key])
+  end
+
   defp valid_payload do
     %PrismStreamPayload{
       action_id: @action_id,

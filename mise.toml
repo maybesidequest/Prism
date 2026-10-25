@@ -1,3 +1,5 @@
 [tools]
-elixir = "latest"
-erlang = "latest"
+# Match the Dockerfile's builder image (elixir:1.20-otp-29) so local runs, CI
+# and production use one runtime.
+elixir = "1.20-otp-29"
+erlang = "29"

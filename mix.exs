@@ -38,7 +38,9 @@ defmodule Prism.MixProject do
       {:brod, "~> 4.5"},
       {:broadway_kafka, "~> 0.4.4"},
       {:protox, "~> 2.0"},
-      {:ezstd, "~> 1.1"}
+      {:ezstd, "~> 1.1"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]
   end
 

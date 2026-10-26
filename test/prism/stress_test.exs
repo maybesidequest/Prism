@@ -63,7 +63,6 @@ defmodule Prism.StressTest do
       MockDiscordServer.stub_ok(webhook, "msg_A_002")
 
       call_process_target(webhook)
-      Process.sleep(50)
 
       {:ok, remaining} = Bucket.acquire(webhook, "post")
       assert remaining == 48
@@ -82,7 +81,7 @@ defmodule Prism.StressTest do
 
       assert {:error, {:rate_limited, _}} = call_process_target(webhook)
 
-      Process.sleep(80)
+      flush_rate_limit_casts()
       assert Backpressure.unhealthy?()
 
       MockDiscordServer.clear_requests()
@@ -91,7 +90,7 @@ defmodule Prism.StressTest do
 
       assert MockDiscordServer.request_count() == 0
 
-      Process.sleep(80)
+      flush_rate_limit_casts()
       count = InvalidRequestTracker.count_in_window()
       assert count >= 1
     end
@@ -110,8 +109,6 @@ defmodule Prism.StressTest do
 
       assert {:error, {:rate_limited, _}} = call_process_target(webhook)
 
-      Process.sleep(80)
-
       assert {:blocked, _ttl} = Bucket.acquire(other_webhook, "post")
     end
 
@@ -121,7 +118,6 @@ defmodule Prism.StressTest do
       MockDiscordServer.stub_discord_global_429(webhook, 3.0)
 
       call_process_target(webhook)
-      Process.sleep(80)
 
       {:blocked, ttl} =
         Bucket.acquire("any_webhook_#{System.unique_integer([:positive])}", "post")
@@ -145,7 +141,7 @@ defmodule Prism.StressTest do
 
       assert {:error, {:rate_limited, _}} = call_process_target(webhook)
 
-      Process.sleep(80)
+      flush_rate_limit_casts()
 
       assert InvalidRequestTracker.count_in_window() == before_count
     end
@@ -165,7 +161,7 @@ defmodule Prism.StressTest do
 
       assert {:error, {:rate_limited, _}} = call_process_target(webhook)
 
-      Process.sleep(80)
+      flush_rate_limit_casts()
 
       assert InvalidRequestTracker.count_in_window() >= before_count + 1
     end
@@ -183,19 +179,16 @@ defmodule Prism.StressTest do
       {:ok, pid2} = spawn_sleep_task(5000)
       {:ok, pid3} = spawn_sleep_task(5000)
 
-      Process.sleep(30)
       assert active_count() == 3
 
       Process.exit(pid1, :kill)
       Process.exit(pid2, :kill)
 
-      Process.sleep(60)
-      assert active_count() == 1
+      assert wait_for_active_count(1) == 1
 
       Process.exit(pid3, :kill)
 
-      Process.sleep(60)
-      assert active_count() == 0
+      assert wait_for_active_count(0) == 0
     end
   end
 
@@ -215,18 +208,15 @@ defmodule Prism.StressTest do
           pid
         end
 
-      Process.sleep(30)
       assert active_count() == max_async
 
       Enum.each(pids, fn pid -> Process.exit(pid, :kill) end)
 
-      Process.sleep(60)
-      assert active_count() == 0
+      assert wait_for_active_count(0) == 0
 
       {:ok, _pid} = spawn_sleep_task(50)
-      Process.sleep(100)
 
-      assert active_count() == 0
+      assert wait_for_active_count(0) == 0
     end
   end
 
@@ -280,10 +270,8 @@ defmodule Prism.StressTest do
       assert {:error, {:rate_limited, _}} = result_2
       assert {:error, {:rate_limited, _}} = result_3
 
-      Process.sleep(80)
+      flush_rate_limit_casts()
       assert unhealthy?()
-
-      Process.sleep(50)
       assert InvalidRequestTracker.count_in_window() >= 2
     end
   end

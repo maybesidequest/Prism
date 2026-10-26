@@ -3,6 +3,8 @@ defmodule Prism.DelayedSchedulerTest do
 
   alias Prism.DelayedScheduler
 
+  import Prism.TestWait
+
   setup do
     zset_key = Prism.Config.delayed_zset_key()
     stream_key = Prism.Config.stream_retries()
@@ -30,18 +32,24 @@ defmodule Prism.DelayedSchedulerTest do
     zset_key: zset_key
   } do
     now = :os.system_time(:millisecond)
-    Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 200), "{\"id\": 1}"])
+    item = ~s({"id": 1})
+    # Due in 1 s: wide enough that a slow Redis round trip under a loaded test
+    # run still checks it before it is due.
+    Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 1_000), item])
 
     send(pid, :tick)
-    Process.sleep(50)
+    flush(pid)
 
-    assert 1 = Redix.command!(redix_conn, ["ZCARD", zset_key])
-    assert 0 = Redix.command!(redix_conn, ["XLEN", stream_key])
+    assert delayed?(redix_conn, zset_key, item)
+    refute item in stream_payloads(redix_conn, stream_key)
 
-    Process.sleep(250)
-
-    assert 0 = Redix.command!(redix_conn, ["ZCARD", zset_key])
-    assert 1 = Redix.command!(redix_conn, ["XLEN", stream_key])
+    eventually(
+      fn ->
+        refute delayed?(redix_conn, zset_key, item)
+        assert item in stream_payloads(redix_conn, stream_key)
+      end,
+      3_000
+    )
   end
 
   test "scheduler wakes up early when a PubSub event arrives", %{
@@ -53,17 +61,40 @@ defmodule Prism.DelayedSchedulerTest do
   } do
     now = :os.system_time(:millisecond)
 
-    Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 5000), "{\"id\": 2}"])
+    late = ~s({"id": 2})
+    early = ~s({"id": 3})
+    Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 5000), late])
     send(pid, :tick)
+    flush(pid)
 
-    Process.sleep(50)
+    # The scheduler subscribes in init; the wake-up is lost if Redis has not
+    # registered that subscription before the PUBLISH.
+    flush(Prism.PubSub)
 
-    Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 100), "{\"id\": 3}"])
+    eventually(fn ->
+      assert [_, subscribers] = Redix.command!(redix_conn, ["PUBSUB", "NUMSUB", pubsub_channel])
+      assert subscribers >= 1
+    end)
+
+    Redix.command!(redix_conn, ["ZADD", zset_key, to_string(now + 100), early])
     Redix.command!(redix_conn, ["PUBLISH", pubsub_channel, "new_earliest:#{now + 100}"])
 
-    Process.sleep(500)
+    # The 5 s item stays put, so the move can only come from the early wake-up.
+    eventually(fn ->
+      assert delayed?(redix_conn, zset_key, late)
+      refute delayed?(redix_conn, zset_key, early)
+      assert early in stream_payloads(redix_conn, stream_key)
+    end)
+  end
 
-    assert 1 = Redix.command!(redix_conn, ["ZCARD", zset_key])
-    assert 1 = Redix.command!(redix_conn, ["XLEN", stream_key])
+  # Retry tasks left by other test files also write to these keys, so the tests
+  # look for their own items instead of counting entries.
+  defp delayed?(conn, zset_key, item),
+    do: Redix.command!(conn, ["ZSCORE", zset_key, item]) != nil
+
+  defp stream_payloads(conn, stream_key) do
+    for [_id, fields] <- Redix.command!(conn, ["XRANGE", stream_key, "-", "+"]),
+        {"payload", payload} <- Enum.chunk_every(fields, 2) |> Enum.map(&List.to_tuple/1),
+        do: payload
   end
 end

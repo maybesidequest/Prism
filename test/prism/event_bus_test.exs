@@ -257,23 +257,24 @@ defmodule Prism.EventBusTest do
 
       assert_receive :handler_called, 3000
 
-      Process.sleep(200)
+      # The consumer acks after the handler returns.
+      Prism.TestWait.eventually(fn ->
+        pending =
+          try do
+            Redix.command!(redix_conn, [
+              "XPENDING",
+              stream,
+              "#{@consumer_group}-ack-test",
+              "-",
+              "+",
+              "100"
+            ])
+          rescue
+            _ -> []
+          end
 
-      pending =
-        try do
-          Redix.command!(redix_conn, [
-            "XPENDING",
-            stream,
-            "#{@consumer_group}-ack-test",
-            "-",
-            "+",
-            "100"
-          ])
-        rescue
-          _ -> []
-        end
-
-      assert pending == []
+        assert pending == []
+      end)
 
       Process.exit(consumer, :normal)
     end

@@ -3,12 +3,14 @@ defmodule Prism.RateLimit.InvalidRequestTrackerTest do
 
   alias Prism.RateLimit.InvalidRequestTracker
 
+  import Prism.TestWait, only: [flush: 1]
+
   @table :prism_invalid_tracker
 
   setup do
+    # Let casts from earlier tests land before clearing the table.
+    flush(InvalidRequestTracker)
     :ets.delete_all_objects(@table)
-    # Drain any pending genserver casts
-    Process.sleep(50)
     :ok
   end
 
@@ -21,7 +23,7 @@ defmodule Prism.RateLimit.InvalidRequestTrackerTest do
   describe "record_invalid/0 via GenServer cast" do
     test "single record_invalid is reflected in count" do
       InvalidRequestTracker.record_invalid()
-      Process.sleep(100)
+      flush(InvalidRequestTracker)
       assert InvalidRequestTracker.count_in_window() >= 1
     end
   end
@@ -47,7 +49,7 @@ defmodule Prism.RateLimit.InvalidRequestTrackerTest do
       pid = Process.whereis(InvalidRequestTracker)
       assert pid != nil
       send(pid, :prune)
-      Process.sleep(100)
+      flush(pid)
 
       assert InvalidRequestTracker.count_in_window() == 1
     end

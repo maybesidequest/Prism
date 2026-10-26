@@ -96,13 +96,21 @@ defmodule Prism.StressHelpers do
   @doc """
   Injects a Cloudflare block at the backpressure level.
 
-  Because `Backpressure.record_cloudflare_block/1` is a `GenServer.cast`,
-  this helper sleeps briefly to allow the cast to be processed.
+  `Backpressure.record_cloudflare_block/1` is a `GenServer.cast`, so this
+  waits for Backpressure to handle it.
   """
   def inject_cloudflare_block(retry_after_ms \\ 120_000) do
     Backpressure.record_cloudflare_block(retry_after_ms)
-    Process.sleep(80)
-    :ok
+    Prism.TestWait.flush(Backpressure)
+  end
+
+  @doc """
+  Waits until Backpressure and InvalidRequestTracker have handled the casts a
+  call in this process made. Bucket updates are synchronous and need no wait.
+  """
+  def flush_rate_limit_casts do
+    Prism.TestWait.flush(Backpressure)
+    Prism.TestWait.flush(InvalidRequestTracker)
   end
 
   @doc """

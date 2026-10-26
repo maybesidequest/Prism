@@ -3,13 +3,14 @@ defmodule Prism.RateLimit.BackpressureTest do
 
   alias Prism.RateLimit.Backpressure
 
+  import Prism.TestWait, only: [flush: 1]
+
   @moduletag :capture_log
 
   setup do
     :persistent_term.put(:prism_backoff_until, 0)
     :persistent_term.put(:prism_blocked_at, 0)
-    Process.sleep(60)
-    :ok
+    flush(Backpressure)
   end
 
   describe "backoff_ms/0" do
@@ -54,13 +55,13 @@ defmodule Prism.RateLimit.BackpressureTest do
   describe "record_cloudflare_block/1" do
     test "sets backoff via GenServer cast" do
       Backpressure.record_cloudflare_block(5000)
-      Process.sleep(120)
+      flush(Backpressure)
       assert Backpressure.unhealthy?()
     end
 
     test "caps backoff at max (600s)" do
       Backpressure.record_cloudflare_block(1_000_000)
-      Process.sleep(120)
+      flush(Backpressure)
       ms = Backpressure.backoff_ms()
       assert ms > 0
       # Capped at 600_000 ± tolerance
@@ -70,7 +71,7 @@ defmodule Prism.RateLimit.BackpressureTest do
     test "ignores non-positive retry_after values" do
       Backpressure.record_cloudflare_block(0)
       Backpressure.record_cloudflare_block(-1)
-      Process.sleep(80)
+      flush(Backpressure)
       refute Backpressure.unhealthy?()
     end
   end
@@ -82,7 +83,7 @@ defmodule Prism.RateLimit.BackpressureTest do
       :persistent_term.put(:prism_backoff_until, past)
 
       Backpressure.record_success()
-      Process.sleep(120)
+      flush(Backpressure)
       refute Backpressure.unhealthy?()
     end
   end

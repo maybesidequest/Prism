@@ -51,6 +51,12 @@ cp .env.example .env
 supervisor, Kafka client, Redis PubSub connection, and every configured fanout
 consumer and retry consumer are running.
 
+The Redis event-bus transport (`Prism.EventBus.Transport.Redis`, with
+`Prism.EventBus.Consumer` and `Prism.EventBus.DLQ`) is for dev and tests only,
+so the test suite runs without a Kafka broker. Production refuses any
+`EVENT_BUS_TRANSPORT` other than `kafka`. The delayed queue, the retries stream,
+rate limits and caches use Redis through separate code, in every environment.
+
 ### Performance Tuning
 
 | Variable | Description | Default |

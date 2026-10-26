@@ -31,24 +31,21 @@ defmodule Prism.CongestionWindow do
   """
   @spec acquire() :: :ok | {:backoff, non_neg_integer()}
   def acquire do
-    if not Prism.Config.congestion_control_enabled?() do
+    atomics_ref =
+      Prism.Config.congestion_control_enabled?() and :persistent_term.get(@atomics_key, nil)
+
+    if atomics_ref, do: take_token(atomics_ref), else: :ok
+  end
+
+  defp take_token(atomics_ref) do
+    new_val = :atomics.add_get(atomics_ref, @in_flight_idx, 1)
+    cwnd = :persistent_term.get(@cwnd_key, Prism.Config.cwnd_min())
+
+    if new_val <= cwnd do
       :ok
     else
-      atomics_ref = :persistent_term.get(@atomics_key, nil)
-
-      if atomics_ref do
-        new_val = :atomics.add_get(atomics_ref, @in_flight_idx, 1)
-        cwnd = :persistent_term.get(@cwnd_key, Prism.Config.cwnd_min())
-
-        if new_val <= cwnd do
-          :ok
-        else
-          :atomics.sub(atomics_ref, @in_flight_idx, 1)
-          {:backoff, estimate_backoff_ms(new_val, cwnd)}
-        end
-      else
-        :ok
-      end
+      :atomics.sub(atomics_ref, @in_flight_idx, 1)
+      {:backoff, estimate_backoff_ms(new_val, cwnd)}
     end
   end
 
@@ -130,47 +127,47 @@ defmodule Prism.CongestionWindow do
 
   @impl true
   def init(_) do
-    if not Prism.Config.congestion_control_enabled?() do
-      :ignore
-    else
-      # Initialize ETS for 4xx tracking
-      :ets.new(@table_name, [:ordered_set, :public, :named_table, read_concurrency: true])
+    if Prism.Config.congestion_control_enabled?(), do: start_window(), else: :ignore
+  end
 
-      # Initialize Atomics for hot path
-      atomics_ref = :atomics.new(1, signed: false)
-      :persistent_term.put(@atomics_key, atomics_ref)
-      :persistent_term.put(@cwnd_key, Prism.Config.cwnd_initial())
+  defp start_window do
+    # Initialize ETS for 4xx tracking
+    :ets.new(@table_name, [:ordered_set, :public, :named_table, read_concurrency: true])
 
-      now = System.monotonic_time(:millisecond)
+    # Initialize Atomics for hot path
+    atomics_ref = :atomics.new(1, signed: false)
+    :persistent_term.put(@atomics_key, atomics_ref)
+    :persistent_term.put(@cwnd_key, Prism.Config.cwnd_initial())
 
-      cubic_state = %{
-        cwnd: float_cwnd_initial(),
-        w_max: float_cwnd_initial(),
-        ssthresh: Prism.Config.ssthresh_initial() * 1.0,
-        cwnd_epoch: float_cwnd_initial(),
-        epoch_start: now,
-        k: 0.0,
-        beta_last: Prism.Config.cwnd_beta_global(),
-        w_est: float_cwnd_initial(),
-        alpha_cubic:
-          3.0 * (1.0 - Prism.Config.cwnd_beta_global()) / (1.0 + Prism.Config.cwnd_beta_global()),
-        last_decrease_at: now - Prism.Config.cwnd_decrease_cooldown_ms(),
-        estimated_rtt: 100.0,
-        phase: :slow_start
-      }
+    now = System.monotonic_time(:millisecond)
 
-      state = %{
-        cubic: cubic_state,
-        probe_timer: nil,
-        successes_since_probe: 0
-      }
+    cubic_state = %{
+      cwnd: float_cwnd_initial(),
+      w_max: float_cwnd_initial(),
+      ssthresh: Prism.Config.ssthresh_initial() * 1.0,
+      cwnd_epoch: float_cwnd_initial(),
+      epoch_start: now,
+      k: 0.0,
+      beta_last: Prism.Config.cwnd_beta_global(),
+      w_est: float_cwnd_initial(),
+      alpha_cubic:
+        3.0 * (1.0 - Prism.Config.cwnd_beta_global()) / (1.0 + Prism.Config.cwnd_beta_global()),
+      last_decrease_at: now - Prism.Config.cwnd_decrease_cooldown_ms(),
+      estimated_rtt: 100.0,
+      phase: :slow_start
+    }
 
-      schedule_probe()
-      schedule_prune()
+    state = %{
+      cubic: cubic_state,
+      probe_timer: nil,
+      successes_since_probe: 0
+    }
 
-      Logger.info("[CongestionWindow] Started with CWND=#{cubic_state.cwnd}")
-      {:ok, state}
-    end
+    schedule_probe()
+    schedule_prune()
+
+    Logger.info("[CongestionWindow] Started with CWND=#{cubic_state.cwnd}")
+    {:ok, state}
   end
 
   # ── Signal Handling (Casts) ──────────────────────────────────────────────────

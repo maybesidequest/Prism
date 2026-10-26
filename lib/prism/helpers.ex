@@ -258,13 +258,13 @@ defmodule Prism.Helpers do
     components = Map.get(map, "components")
 
     (is_nil(content) or content == "") and
-      is_nil_or_empty_list?(embeds) and
-      is_nil_or_empty_list?(components)
+      nil_or_empty_list?(embeds) and
+      nil_or_empty_list?(components)
   end
 
-  defp is_nil_or_empty_list?(nil), do: true
-  defp is_nil_or_empty_list?(list) when is_list(list), do: list == []
-  defp is_nil_or_empty_list?(_), do: false
+  defp nil_or_empty_list?(nil), do: true
+  defp nil_or_empty_list?(list) when is_list(list), do: list == []
+  defp nil_or_empty_list?(_), do: false
 
   # ── Protobuf Struct Decoder ──────────────────────────────────────────────
 

@@ -1,4 +1,9 @@
 defmodule Prism.FanoutBroadway do
+  @moduledoc """
+  Broadway pipeline that reads fanout jobs (from Kafka or the Redis jobs stream)
+  and delivers each job's message to its webhook targets.
+  """
+
   use Broadway
 
   require Logger

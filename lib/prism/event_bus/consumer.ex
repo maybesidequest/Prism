@@ -396,7 +396,7 @@ defmodule Prism.EventBus.Consumer do
         state.batch_size
       )
 
-    if length(messages) > 0 do
+    if messages != [] do
       Logger.info(
         "[EventBus.Consumer] XAUTOCLAIM recovered #{length(messages)} stale messages " <>
           "on '#{state.stream}'"

@@ -1,4 +1,9 @@
 defmodule Prism.DiscordWorker do
+  @moduledoc """
+  Sends, edits and deletes one webhook message for one target, and schedules a
+  retry when Discord rate-limits or fails the request.
+  """
+
   require Logger
   require OpenTelemetry.Tracer
 

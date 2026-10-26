@@ -23,11 +23,7 @@ defmodule Prism.RedisClient do
     if Prism.RateLimit.unhealthy?() do
       backoff = Prism.RateLimit.backoff_ms()
 
-      sleep_ms =
-        cond do
-          backoff > 0 -> min(backoff, 30_000)
-          true -> 5_000
-        end
+      sleep_ms = if backoff > 0, do: min(backoff, 30_000), else: 5_000
 
       Process.sleep(sleep_ms)
       {:ok, []}

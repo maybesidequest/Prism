@@ -1,4 +1,9 @@
 defmodule Prism.RetryBroadway do
+  @moduledoc """
+  Broadway pipeline that reads the Redis retries stream and replays each
+  delivery once its retry is due.
+  """
+
   use Broadway
 
   require Logger

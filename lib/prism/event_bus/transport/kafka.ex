@@ -1,4 +1,9 @@
 defmodule Prism.EventBus.Transport.Kafka do
+  @moduledoc """
+  Kafka implementation of the `Transport.Behaviour`, publishing through the
+  shared `:kafka_client` brod client.
+  """
+
   @behaviour Prism.EventBus.Transport.Behaviour
 
   @impl true

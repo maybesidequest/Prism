@@ -1,4 +1,8 @@
 defmodule Prism.MetricsLogger do
+  @moduledoc """
+  Logs throughput, queue lengths and VM counters every ten seconds.
+  """
+
   use GenServer
   require Logger
 

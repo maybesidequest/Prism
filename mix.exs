@@ -24,6 +24,9 @@ defmodule Prism.MixProject do
   defp deps do
     [
       {:broadway, "~> 1.1"},
+      # nimble_options 1.2.0 rejects Broadway 1.3.0's `transformer: nil` default and no
+      # Broadway can start; lift this once Broadway ships a fix.
+      {:nimble_options, "~> 1.1.1"},
       {:off_broadway_redis_stream, "~> 0.7"},
       {:finch, "~> 0.18"},
       {:dotenvy, "~> 1.1"},
@@ -36,7 +39,7 @@ defmodule Prism.MixProject do
       {:bandit, "~> 1.5"},
       {:plug, "~> 1.6"},
       {:brod, "~> 4.5"},
-      {:broadway_kafka, "~> 0.4.4"},
+      {:broadway_kafka, "~> 0.7"},
       {:protox, "~> 2.0"},
       {:ezstd, "~> 1.1"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

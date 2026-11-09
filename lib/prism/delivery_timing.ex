@@ -5,8 +5,6 @@ defmodule Prism.DeliveryTiming do
   rolling upgrades do not reject or mis-handle older jobs.
   """
 
-  require OpenTelemetry.Tracer
-
   defstruct [
     :origin_at_ms,
     :ingress_at_ms,

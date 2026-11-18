@@ -1,10 +1,13 @@
 name: Docker Build & Publish
+
+# Two ways in:
+# - CI calls it on every push to main, in parallel with the checks. It pushes
+#   only the commit tag; CI moves staging to it once every check passes.
+# - Release dispatches it with a version tag. The release commit only bumps the
+#   version in mix.exs, so the image of the commit before it, which CI already
+#   tested, is promoted instead of rebuilding.
 on:
-  push:
-    branches:
-      - main
-  release:
-    types: [published]
+  workflow_call:
   workflow_dispatch:
     inputs:
       environment:
@@ -21,38 +24,65 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: read
 
 jobs:
-  verify:
+  plan:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-26.04
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+    outputs:
+      environment: ${{ steps.vars.outputs.environment }}
+      version_tag: ${{ steps.vars.outputs.version_tag }}
+      parent: ${{ steps.parent.outputs.parent }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      - name: Install Erlang and Elixir
-        uses: erlef/setup-beam@v1
         with:
-          otp-version: "29"
-          elixir-version: "1.20"
-      - name: Install dependencies
-        run: mix deps.get --check-locked
-      - name: Verify
-        run: |
-          mix format --check-formatted
-          MIX_ENV=test mix compile --warnings-as-errors
-          MIX_ENV=test mix test
+          fetch-depth: 2
 
-  build-and-push:
-    needs: verify
+      - name: Check the inputs
+        id: vars
+        # Inputs arrive through env, never spliced into the script, so a crafted
+        # value cannot run as shell.
+        env:
+          INPUT_VERSION_TAG: ${{ inputs.version_tag }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          valid_tag='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+          [[ "$INPUT_VERSION_TAG" =~ $valid_tag ]] || { echo "version_tag is required and must be a valid image tag" >&2; exit 1; }
+          environment="${INPUT_ENVIRONMENT:-prod}"
+          [[ "$environment" == "prod" || "$environment" == "staging" ]] || { echo "environment must be prod or staging" >&2; exit 1; }
+          echo "environment=${environment}" >> "$GITHUB_OUTPUT"
+          echo "version_tag=${INPUT_VERSION_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for CI on the commit before the release
+        id: parent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only HEAD^ HEAD | tr '\n' ' ')"
+          if [[ "$changed" != "mix.exs " ]]; then
+            echo "The release commit changes more than mix.exs ($changed). Releases only bump the version; release from a commit that CI has tested." >&2
+            exit 1
+          fi
+          parent="$(git rev-parse HEAD^)"
+          for _ in $(seq 1 80); do
+            run="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$parent" --event push \
+              --json status,conclusion --jq '.[0] // {} | "\(.status // "none") \(.conclusion // "")"')"
+            case "$run" in
+              "completed success") echo "parent=${parent}" >> "$GITHUB_OUTPUT"; echo "CI passed for ${parent}."; exit 0 ;;
+              completed*) echo "CI did not pass for ${parent} (${run}); not releasing it." >&2; exit 1 ;;
+              none*) echo "No CI run for ${parent}; not releasing it." >&2; exit 1 ;;
+            esac
+            echo "CI for ${parent} is ${run}; waiting."
+            sleep 15
+          done
+          echo "Timed out waiting for CI on ${parent}." >&2
+          exit 1
+
+  image:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: arc-runner-set
     steps:
       - name: Checkout Code
@@ -65,85 +95,58 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Shared, long-lived BuildKit in arc-runners (interchat-kube-talos,
+      # infrastructure-apps/buildkit). Unlike the runner's own dind daemon it
+      # keeps layers and cache mounts between jobs. mTLS client cert is mounted
+      # on every arc-runner-set pod. The registry cache below stays as a
+      # fallback and for cold starts.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: remote
+          endpoint: tcp://buildkitd.arc-runners.svc:1234
+          driver-opts: |
+            cacert=/etc/buildkit/client/ca.crt
+            cert=/etc/buildkit/client/tls.crt
+            key=/etc/buildkit/client/tls.key
+            servername=buildkitd.arc-runners.svc
 
-      - name: Determine tags and environment
-        id: vars
-        # Inputs arrive through env, never spliced into the script, so a crafted
-        # value cannot run as shell.
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          INPUT_VERSION_TAG: ${{ github.event.inputs.version_tag }}
-          INPUT_ENVIRONMENT: ${{ github.event.inputs.environment }}
-          SHA: ${{ github.sha }}
-        run: |
-          valid_tag='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
-          if [[ "$EVENT_NAME" == "release" ]]; then
-            [[ "$REF_NAME" =~ $valid_tag ]] || { echo "release tag is not a valid image tag" >&2; exit 1; }
-            echo "environment=prod" >> "$GITHUB_OUTPUT"
-            echo "float_tag=latest" >> "$GITHUB_OUTPUT"
-            echo "version_tag=ghcr.io/maybesidequest/prism:${REF_NAME}" >> "$GITHUB_OUTPUT"
-          elif [[ -n "$INPUT_VERSION_TAG" ]]; then
-            [[ "$INPUT_VERSION_TAG" =~ $valid_tag ]] || { echo "version_tag is not a valid image tag" >&2; exit 1; }
-            [[ "$INPUT_ENVIRONMENT" == "prod" || "$INPUT_ENVIRONMENT" == "staging" ]] || { echo "environment must be prod or staging" >&2; exit 1; }
-            echo "environment=${INPUT_ENVIRONMENT}" >> "$GITHUB_OUTPUT"
-            echo "float_tag=latest" >> "$GITHUB_OUTPUT"
-            echo "version_tag=ghcr.io/maybesidequest/prism:${INPUT_VERSION_TAG}" >> "$GITHUB_OUTPUT"
-          else
-            echo "environment=staging" >> "$GITHUB_OUTPUT"
-            echo "float_tag=staging" >> "$GITHUB_OUTPUT"
-            echo "version_tag=" >> "$GITHUB_OUTPUT"
-          fi
-          echo "sha_tag=${SHA}" >> "$GITHUB_OUTPUT"
-
+      # Only the commit tag: CI moves the staging tag once its checks pass.
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          # ARC runners start every job with an empty BuildKit, so layer reuse
-          # across runs comes only from this registry cache. A failed cache
-          # export must never fail the deploy.
+          # A failed cache export must never fail the deploy.
           cache-from: type=registry,ref=ghcr.io/maybesidequest/prism:buildcache
           cache-to: type=registry,ref=ghcr.io/maybesidequest/prism:buildcache,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
-          tags: |
-            ghcr.io/maybesidequest/prism:${{ steps.vars.outputs.sha_tag }}
-            ghcr.io/maybesidequest/prism:${{ steps.vars.outputs.float_tag }}
-            ${{ steps.vars.outputs.version_tag }}
+          tags: ghcr.io/maybesidequest/prism:${{ github.sha }}
 
-      - name: Update GitOps repo
+  promote:
+    needs: plan
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the tested image as the release commit
         env:
-          GITOPS_PAT: ${{ secrets.GITOPS_PAT }}
-          ENV: ${{ steps.vars.outputs.environment }}
-          SHA: ${{ steps.vars.outputs.sha_tag }}
+          PARENT: ${{ needs.plan.outputs.parent }}
         run: |
-          APP_DIR="prism"
+          repo=ghcr.io/maybesidequest/prism
+          docker buildx imagetools create --tag "${repo}:${GITHUB_SHA}" "${repo}:${PARENT}"
 
-          git clone --depth 1 \
-            "https://x-access-token:${GITOPS_PAT}@github.com/maybesidequest/interchat-kube-talos.git" \
-            /tmp/gitops
-
-          cd /tmp/gitops
-
-          KUSTOMIZATION="kubernetes/apps/${APP_DIR}/overlays/${ENV}/kustomization.yaml"
-
-          sed -i "s/newTag:.*/newTag: ${SHA}/" "$KUSTOMIZATION"
-
-          git config user.name "ci-bot"
-          git config user.email "ci-bot@interchat.fun"
-          git add "$KUSTOMIZATION"
-          git commit -m "deploy(${APP_DIR}-${ENV}): ${SHA}" || echo "No changes to commit"
-          # Other services push deploy commits to the same branch; rebase onto
-          # theirs and retry instead of failing the release on a race.
-          for attempt in 1 2 3 4 5; do
-            if git push origin main; then
-              exit 0
-            fi
-            echo "push rejected (attempt ${attempt}); rebasing and retrying" >&2
-            sleep $((attempt * 2))
-            git pull --rebase origin main
-          done
-          echo "could not push the GitOps update after 5 attempts" >&2
-          exit 1
+  deploy:
+    needs: [plan, promote]
+    uses: ./.github/workflows/gitops-deploy.yml
+    with:
+      environment: ${{ needs.plan.outputs.environment }}
+      sha: ${{ github.sha }}
+      float_tag: latest
+      version_tag: ${{ needs.plan.outputs.version_tag }}
+    secrets:
+      GITOPS_PAT: ${{ secrets.GITOPS_PAT }}

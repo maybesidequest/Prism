@@ -1,0 +1,89 @@
+name: GitOps Deploy
+
+# Moves the float (and version) tag to an image that passed CI, then points the
+# environment's overlay at it. Called by CI (staging) and Docker Build &
+# Publish (releases).
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      float_tag:
+        required: true
+        type: string
+      version_tag:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GITOPS_PAT:
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: gitops-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move the float and version tags to the image
+        env:
+          SHA: ${{ inputs.sha }}
+          FLOAT_TAG: ${{ inputs.float_tag }}
+          VERSION_TAG: ${{ inputs.version_tag }}
+        run: |
+          repo=ghcr.io/maybesidequest/prism
+          tags=(--tag "${repo}:${FLOAT_TAG}")
+          [[ -n "$VERSION_TAG" ]] && tags+=(--tag "${repo}:${VERSION_TAG}")
+          docker buildx imagetools create "${tags[@]}" "${repo}:${SHA}"
+
+      - name: Update GitOps repo
+        env:
+          GITOPS_PAT: ${{ secrets.GITOPS_PAT }}
+          ENV: ${{ inputs.environment }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          APP_DIR="prism"
+
+          git clone --depth 1 \
+            "https://x-access-token:${GITOPS_PAT}@github.com/maybesidequest/interchat-kube-talos.git" \
+            /tmp/gitops
+
+          cd /tmp/gitops
+
+          KUSTOMIZATION="kubernetes/apps/${APP_DIR}/overlays/${ENV}/kustomization.yaml"
+
+          sed -i "s/newTag:.*/newTag: ${SHA}/" "$KUSTOMIZATION"
+
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@interchat.fun"
+          git add "$KUSTOMIZATION"
+          git commit -m "deploy(${APP_DIR}-${ENV}): ${SHA}" || echo "No changes to commit"
+          # Other services push deploy commits to the same branch; rebase onto
+          # theirs and retry instead of failing the release on a race.
+          for attempt in 1 2 3 4 5; do
+            if git push origin main; then
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); rebasing and retrying" >&2
+            sleep $((attempt * 2))
+            git pull --rebase origin main
+          done
+          echo "could not push the GitOps update after 5 attempts" >&2
+          exit 1

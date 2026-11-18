@@ -1,5 +1,7 @@
 name: CI
 
+# Every check is its own job so they run side by side. On main the image builds
+# alongside them, and staging moves to it only once every check passes.
 on:
   pull_request:
   push:
@@ -10,7 +12,7 @@ permissions:
 
 concurrency:
   group: prism-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -49,9 +51,6 @@ jobs:
       - name: Check formatting
         run: mix format --check-formatted
 
-      - name: Audit dependencies
-        run: mix deps.audit
-
       - name: Credo
         run: mix credo
 
@@ -60,3 +59,52 @@ jobs:
 
       - name: Run tests
         run: MIX_ENV=test mix test
+
+  # Fetches the advisory database on every run, so it runs beside the build.
+  audit:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Erlang and Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20"
+
+      - name: Restore dependencies and build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deps
+            _build
+          key: prism-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+
+      - name: Install dependencies
+        run: mix deps.get --check-locked
+
+      - name: Audit dependencies
+        run: mix deps.audit
+
+  image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    uses: ./.github/workflows/docker-build.yml
+
+  deploy-staging:
+    needs: [verify, audit, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/gitops-deploy.yml
+    with:
+      environment: staging
+      sha: ${{ github.sha }}
+      float_tag: staging
+    permissions:
+      contents: read
+      packages: write
+    secrets:
+      GITOPS_PAT: ${{ secrets.GITOPS_PAT }}
